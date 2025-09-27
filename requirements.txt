@@ -1,0 +1,6 @@
+pydantic
+langgraph
+google-generativeai
+python-dotenv
+PyGithub
+google-cloud-logging
