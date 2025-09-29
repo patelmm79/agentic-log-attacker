@@ -43,5 +43,9 @@ This project is a Python-based application that uses AI agents to monitor logs f
 To run the application, simply execute the following command:
 
 ```bash
-python3 src/main.py
+python3 src/main.py --cloud-run-service <your-service-name> --git-repo-url <your-repo-url>
 ```
+
+## Workflow
+
+![Workflow Visualization](workflow.png)
