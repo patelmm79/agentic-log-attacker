@@ -3,12 +3,14 @@ import os
 from github import Github
 from .log_reviewer import Issue
 
-def github_issue_manager_agent(issues: list[Issue]):
+def github_issue_manager_agent(issues: list[Issue], repo_url: str):
     """Creates GitHub issues for a list of issues."""
     try:
-        # Get GitHub token and repository from environment variables
+        # Get GitHub token from environment variables
         token = os.environ["GITHUB_TOKEN"]
-        repo_name = os.environ["GITHUB_REPOSITORY"]
+        
+        # Get repo name from URL
+        repo_name = repo_url.replace("https://github.com/", "")
 
         # Initialize Github object
         g = Github(token)
