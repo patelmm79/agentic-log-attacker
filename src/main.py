@@ -49,7 +49,7 @@ def orchestrator_node(state: AgentState):
 def log_reviewer_node(state: AgentState):
     """Reviews the logs and identifies potential issues."""
     print("Log reviewer agent is running")
-    issues = log_reviewer_agent(service_name=state['cloud_run_service'])
+    issues = log_reviewer_agent(service_name=state['cloud_run_service'], repo_url=state['git_repo_url'])
     return {"issues": issues, "log_reviewer_history": ["Log reviewer agent was called"]}
 
 def github_issue_manager_node(state: AgentState):
