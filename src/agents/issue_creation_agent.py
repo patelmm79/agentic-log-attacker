@@ -11,60 +11,22 @@ class Issue(BaseModel):
     priority: str
     log_entries: list[str]
 
-def log_reviewer_agent(service_name: str, repo_url: str, user_query: str = None, conversation_history: list = None, start_time: str = None, end_time: str = None) -> list[Issue] | str:
-    """Analyzes logs from a Google Cloud project and identifies issues, or answers questions about the logs."""
+def issue_creation_agent(service_name: str, repo_url: str) -> list[Issue]:
+    """Analyzes log files and generates issues in every case."""
     
-    logs, _, error = get_gcp_logs(service_name=service_name, limit=1000, start_time=start_time, end_time=end_time)
+    logs, _, error = get_gcp_logs(service_name=service_name, limit=1000)
 
     if error:
-        return f"I couldn't fetch any logs. Please ensure the service name is correct and that I have the right permissions. Error: {error}"
+        print(f"Error fetching logs: {error}")
+        return []
     if not logs:
-        return "No logs found for the specified service and time range."
-
-        if user_query:
-
-            # Format the conversation history
-
-            formatted_history = ""
-
-            if conversation_history:
-
-                for user, bot in conversation_history:
-
-                    formatted_history += f"User: {user}\nBot: {bot}\n"
-
-    
-
-            prompt = f"""You are a helpful log analysis assistant. Answer the user's question based on the provided conversation history and the latest logs.
-
-    
-
-            Conversation History:
-
-            {formatted_history}
-
-    
-
-            Latest Logs:
-
-            {logs}
-
-    
-
-            User Question: {user_query}
-
-            """
-
-            model = genai.GenerativeModel('models/gemini-pro-latest')
-
-            response = model.generate_content(prompt)
-
-            return response.text
+        print("No logs found for the specified service and time range.")
+        return []
 
     existing_issues = []
     if repo_url:
         existing_issues = get_github_issues(repo_url)
-    existing_issues_str = "\n".join(existing_issues)
+    existing_issues_str = "\n".join(str(issue) for issue in existing_issues)
 
     prompt = f"""Analyze the following logs and identify any potential new issues.
     Avoid creating issues that are duplicates of existing ones.

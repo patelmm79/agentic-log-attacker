@@ -1,14 +1,46 @@
 
 import os
+import json
 from github import Github
+import google.generativeai as genai
 from .log_reviewer import Issue
 from ..tools.github_tool import get_github_issues
 
-def github_issue_manager_agent(issues: list[Issue], repo_url: str):
+def github_issue_manager_agent(issues: list[Issue], repo_url: str, user_query: str = None):
     """Creates GitHub issues for a list of issues."""
+    if not issues and user_query:
+        # If there are no issues, try to create one from the user query
+        prompt = f"""You are a GitHub issue manager. Your job is to extract the title and body of a GitHub issue from the user's query.
+        Return a JSON object with the keys 'title' and 'body'.
+
+        User Query: {user_query}
+        """
+        model = genai.GenerativeModel('models/gemini-pro-latest')
+        response = model.generate_content(prompt)
+        raw_response_text = response.text
+        print(f"Gemini API raw response: {raw_response_text}")
+        # Strip markdown code block syntax if present
+        if raw_response_text.startswith('```json') and raw_response_text.endswith('```'):
+            json_string = raw_response_text[len('```json\n'):-len('\n```')]
+        else:
+            json_string = raw_response_text
+
+        try:
+            issue_data = json.loads(json_string)
+            if issue_data:
+                issues = [Issue(description=issue_data['title'], priority="High", log_entries=[issue_data['body']])] 
+        except (json.JSONDecodeError, TypeError) as e:
+            return {"github_issue_manager_history": [f"Error parsing response from Gemini API: {e}. Raw response: {raw_response_text}"]}
+
+    """Creates GitHub issues for a list of issues."""
+    if not repo_url:
+        return {"github_issue_manager_history": ["Error: GitHub repository URL not set."]}
+
     try:
         # Get GitHub token from environment variables
-        token = os.environ["GITHUB_TOKEN"]
+        token = os.environ.get("GITHUB_TOKEN")
+        if not token:
+            return {"github_issue_manager_history": ["Error: GITHUB_TOKEN environment variable not set."]}
         
         # Get repo name from URL
         repo_name = repo_url.replace("https://github.com/", "")
@@ -30,7 +62,7 @@ def github_issue_manager_agent(issues: list[Issue], repo_url: str):
     skipped_issues = 0
     for issue in issues:
         try:
-            title = f"Bug: {issue.description[:50]}"
+            title = issue.description[:256] # Use the description as the title, up to 256 chars
             if title in existing_titles:
                 # Check if the issue is open or closed with "wontfix"
                 for existing_issue in existing_issues:
