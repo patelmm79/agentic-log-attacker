@@ -39,25 +39,20 @@ def chat_session(message: str, history: list, state: dict):
     response = app.invoke(state)
     print(f"Response from app.invoke: {response}")
 
-    # Get the latest response from the orchestrator history or the solution
-    if response.get("suggested_fix"):
-        bot_message = response["suggested_fix"]
-    elif response.get("log_reviewer_history"):
-        bot_message = response["log_reviewer_history"][-1]
-    elif response.get("orchestrator_history"):
-        bot_message = response["orchestrator_history"][-1]
-    else:
-        bot_message = "I'm sorry, I couldn't process that request."
-    print(f"Bot Message: {bot_message}")
-
-    # Log the conversation
-    log_conversation(message, bot_message)
-
-    # Update the conversation history in the state
-    state["conversation_history"] = state.get("conversation_history", []) + [(message, bot_message)]
-
     # Update the state for the next turn
     new_state = response
+
+    # Get the latest response from the orchestrator history or the solution
+    if new_state.get("next_agent") == "ask_for_repo_url":
+        bot_message = new_state["orchestrator_history"][-1]
+    elif new_state.get("suggested_fix"):
+        bot_message = new_state["suggested_fix"]
+    elif new_state.get("log_reviewer_history"):
+        bot_message = new_state["log_reviewer_history"][-1]
+    elif new_state.get("orchestrator_history"):
+        bot_message = new_state["orchestrator_history"][-1]
+    else:
+        bot_message = "I'm sorry, I couldn't process that request."
     print(f"New State before returning: {new_state}")
     print(f"Final bot_message before returning: {bot_message}")
 

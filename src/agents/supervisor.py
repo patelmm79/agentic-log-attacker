@@ -7,11 +7,14 @@ def supervisor_agent(user_query: str, conversation_history: list):
     history_str = "\n".join([f"User: {u}\nAgent: {a}" for u, a in conversation_history])
 
     prompt = f"""You are a supervisor agent. Your job is to route user requests to the correct agent.
+    If the user wants to create a GitHub issue, you must also extract the GitHub repository URL from the user's query.
+    If a full URL is not provided, assume the owner is 'example' and construct the full URL.
+    If you cannot confidently determine the 'repo_url' for a GitHub issue creation request, return {{"next_agent": "ask_for_repo_url"}}.
 
     Here are the available agents and their capabilities:
 
     - **log_explorer**: Answers questions about logs and explores potential issues.
-    - **github_issue_manager**: Creates GitHub issues.
+    - **github_issue_manager**: Creates GitHub issues. Requires a 'repo_url'.
     - **solutions_agent**: Provides solutions or recommendations for issues.
 
     Here are some examples of user queries and the correct agent to route to:
@@ -29,10 +32,13 @@ def supervisor_agent(user_query: str, conversation_history: list):
     **Response:** {{"next_agent": "solutions_agent"}}
 
     **User Query:** "please create a github issue to repository vllm-container-prewarm, as a feature request to enable the \"Caching Compiled Kernels\" option"
-    **Response:** {{"next_agent": "github_issue_manager"}}
+    **Response:** {{"next_agent": "github_issue_manager", "repo_url": "https://github.com/example/vllm-container-prewarm"}}
 
     **User Query:** "no, I want you to create the issue in Github"
-    **Response:** {{"next_agent": "github_issue_manager"}}
+    **Response:** {{"next_agent": "github_issue_manager", "repo_url": "https://github.com/example/vllm-container-prewarm"}}
+
+    **User Query:** "create a github issue"
+    **Response:** {{"next_agent": "ask_for_repo_url"}}
 
     {history_str}
 
@@ -51,8 +57,10 @@ def supervisor_agent(user_query: str, conversation_history: list):
     try:
         parsed_response = json.loads(response_text)
         next_agent = parsed_response.get("next_agent")
+        repo_url = parsed_response.get("repo_url")
     except json.JSONDecodeError:
         # Fallback if LLM doesn't return valid JSON
         next_agent = response_text # Assume it's just the agent name
+        repo_url = None
 
-    return {"next_agent": next_agent, "history": [f"Routing to {next_agent}"]}
+    return {"next_agent": next_agent, "repo_url": repo_url, "history": [f"Routing to {next_agent}"]}

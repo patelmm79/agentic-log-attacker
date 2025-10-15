@@ -25,9 +25,6 @@ print(f"CLOUD_RUN_REGION: {os.environ.get('CLOUD_RUN_REGION')}")
 # Configure the generative AI model
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 
-# Configure the generative AI model
-genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-
 class AgentState(TypedDict):
     """Defines the state of the agentic workflow."""
     cloud_run_service: str
@@ -62,11 +59,25 @@ def supervisor_node(state: AgentState):
 
     # Extract next_agent and repo_url from the structured response
     next_agent = response["next_agent"]
-    repo_url = response.get("repo_url", state.get("git_repo_url")) # Use extracted or default
+    repo_url = response.get("repo_url")
 
     print(f"Supervisor Agent decided next_agent: {next_agent}")
     if repo_url:
         print(f"Supervisor Agent extracted repo_url: {repo_url}")
+
+    # --- TEMPORARY DEBUGGING: Directly call solutions_agent if routed there ---
+    if next_agent == "solutions_agent":
+        print("--- TEMPORARY DEBUGGING: Directly calling solutions_agent ---")
+        issue_to_process = state['issues'][0] if state.get('issues') else {}
+        solution = solutions_agent(issue=issue_to_process, user_query=state.get('user_query'), service_name=service_name)
+        return {
+            "orchestrator_history": response['history'],
+            "cloud_run_service": service_name,
+            "git_repo_url": repo_url, # Use the LLM extracted URL
+            "next_agent": next_agent,
+            "suggested_fix": solution # Populate suggested_fix directly
+        }
+    # --- END TEMPORARY DEBUGGING ---
 
     return {
         "orchestrator_history": response['history'],
@@ -120,13 +131,18 @@ def code_fixer_node(state: AgentState):
 
 def solutions_node(state: AgentState):
     """Provides a solution for the identified issues."""
-    print("--- Solutions Node ---")
+    print("--- Entering Solutions Node ---")
     print(f"Issues in state: {state.get('issues')}")
     # Pass the first issue if available, otherwise an empty dict
     issue_to_process = state['issues'][0] if state.get('issues') else {}
     solution = solutions_agent(issue=issue_to_process, user_query=state.get('user_query'), service_name=state.get('cloud_run_service'))
     print(f"Solutions agent returned: {solution}")
     return {"suggested_fix": solution}
+
+def ask_for_repo_url_node(state: AgentState):
+    """Asks the user for the GitHub repository URL."""
+    print("--- Ask for Repo URL Node ---")
+    return {"orchestrator_history": ["Please provide the full GitHub repository URL (e.g., https://github.com/owner/repo)."]}
 
 # Define the graph
 workflow = StateGraph(AgentState)
@@ -138,8 +154,8 @@ workflow.add_node("issue_creation", issue_creation_node)
 workflow.add_node("github_issue_manager", github_issue_manager_node)
 workflow.add_node("code_fixer", code_fixer_node)
 workflow.add_node("solutions", solutions_node)
+workflow.add_node("ask_for_repo_url", ask_for_repo_url_node)
 
-# Define the edges
 workflow.set_entry_point("supervisor")
 def route_after_supervisor(state: AgentState):
     """Determines the next node to route to after the supervisor."""
@@ -151,42 +167,27 @@ def route_after_supervisor(state: AgentState):
         return "github_issue_manager"
     elif next_agent == "solutions_agent":
         return "solutions"
+    elif next_agent == "ask_for_repo_url":
+        return "ask_for_repo_url"
     else:
-        return "end"
+        next_route = "end"
+    print(f"--- route_after_supervisor returning: {next_route} ---")
+    return next_route
 
-workflow.add_conditional_edges(
-    "supervisor",
-    route_after_supervisor,
-    {
-        "log_explorer": "log_explorer",
-        "github_issue_manager": "github_issue_manager",
-        "solutions": "solutions",
-        "end": END,
-    },
-)
 
 workflow.add_edge("code_fixer", END)
 
-def route_after_issue_creation(state: AgentState):
-    """Determines the next node to route to after issue creation."""
-    print("--- Routing after issue creation ---")
-    if state.get('issues'):
-        return "github_issue_manager"
-    else:
-        return "end"
-
-workflow.add_conditional_edges(
-    "issue_creation",
-    route_after_issue_creation,
-    {
-        "github_issue_manager": "github_issue_manager",
-        "solutions": "solutions",
-        "end": END,
-    },
-)
 
 workflow.add_edge("solutions", END)
 
 
+workflow.add_edge("ask_for_repo_url", END)
+
+
+
+
+
 # Compile the graph
+
+
 app = workflow.compile()

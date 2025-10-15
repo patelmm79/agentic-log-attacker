@@ -4,7 +4,7 @@ from src.tools.gcp_logging_tool import get_gcp_logs
 import google.generativeai as genai
 
 def solutions_agent(issue: dict, user_query: str, service_name: str):
-    """Provides a solution for a given issue or user query, potentially using log analysis."""
+    print("--- Solutions Agent called ---")
     issue_title = issue.get('title', user_query)
     print(f"Solutions agent is providing a solution for: {issue_title}")
 
@@ -32,9 +32,11 @@ Based on the user's query and the provided logs, please provide a detailed solut
 3. Proposing concrete, actionable steps to address the user's concern, especially regarding cold start optimization, CUDA graph caching, or build stage improvements. If the logs don't directly address the query, provide general but detailed best practices for the mentioned topics.
 
 Your response should be comprehensive and easy to understand."""
-
+        print("--- Calling LLM for log analysis ---")
         response = model.generate_content(log_analysis_prompt)
+        print("--- LLM call returned ---")
         solution_text = response.text
 
+    print(f"Solutions agent final solution_text: {solution_text}")
     return solution_text
     return solution_text
