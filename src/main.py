@@ -135,7 +135,7 @@ def solutions_node(state: AgentState):
     print(f"Issues in state: {state.get('issues')}")
     # Pass the first issue if available, otherwise an empty dict
     issue_to_process = state['issues'][0] if state.get('issues') else {}
-    solution = solutions_agent(issue=issue_to_process, user_query=state.get('user_query'), service_name=state.get('cloud_run_service'))
+    solution = solutions_agent(issue=issue_to_process, user_query=state.get('user_query'))
     print(f"Solutions agent returned: {solution}")
     return {"suggested_fix": solution}
 
