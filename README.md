@@ -40,11 +40,36 @@ This project is a Python-based application that uses AI agents to monitor logs f
 
 ## Usage
 
-To run the application, simply execute the following command:
+### Running Locally (FastAPI)
+
+To run the FastAPI application locally:
 
 ```bash
-python3 src/main.py --cloud-run-service <your-service-name> --git-repo-url <your-repo-url>
+uvicorn src.main:app --host 0.0.0.0 --port 8080
 ```
+
+The API will be available at `http://localhost:8080`. You can access the interactive API documentation at `http://localhost:8080/docs`.
+
+To trigger the agent workflow, send a POST request to `/run_workflow` with a JSON body containing your query:
+
+```json
+{
+  "user_query": "Your query here, e.g., 'review logs for cloud run service my-service'"
+}
+```
+
+## Deployment to Google Cloud Run
+
+This project can be deployed to Google Cloud Run using Google Cloud Build. A `cloudbuild.yaml` file is provided for this purpose.
+
+1.  **Ensure you have Google Cloud SDK installed and authenticated.**
+2.  **Submit the build to Cloud Build:**
+
+    ```bash
+    gcloud builds submit --config cloudbuild.yaml .
+    ```
+
+    This command will build the Docker image, push it to Google Container Registry, and deploy it to Cloud Run. The service will be named `agentic-log-attacker` in the `us-central1` region (these can be customized in `cloudbuild.yaml`).
 
 ## Workflow
 
