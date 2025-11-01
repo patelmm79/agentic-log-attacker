@@ -62,14 +62,49 @@ To trigger the agent workflow, send a POST request to `/run_workflow` with a JSO
 
 This project can be deployed to Google Cloud Run using Google Cloud Build. A `cloudbuild.yaml` file is provided for this purpose.
 
-1.  **Ensure you have Google Cloud SDK installed and authenticated.**
-2.  **Submit the build to Cloud Build:**
+### Prerequisites
 
-    ```bash
-    gcloud builds submit --config cloudbuild.yaml .
-    ```
+1. **Ensure you have Google Cloud SDK installed and authenticated.**
 
-    This command will build the Docker image, push it to Google Container Registry, and deploy it to Cloud Run. The service will be named `agentic-log-attacker` in the `us-central1` region (these can be customized in `cloudbuild.yaml`).
+2. **Set up secrets in Google Cloud Secret Manager:**
+
+   The application requires sensitive credentials to be stored as secrets:
+
+   ```bash
+   # Create the GEMINI_API_KEY secret
+   echo -n "your-actual-gemini-api-key" | gcloud secrets create GEMINI_API_KEY --data-file=-
+
+   # Create the GITHUB_TOKEN secret
+   echo -n "your-actual-github-token" | gcloud secrets create GITHUB_TOKEN --data-file=-
+   ```
+
+3. **Grant Cloud Run access to the secrets:**
+
+   ```bash
+   # Get your project details
+   export PROJECT_ID=$(gcloud config get-value project)
+   export PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
+
+   # Grant access to GEMINI_API_KEY
+   gcloud secrets add-iam-policy-binding GEMINI_API_KEY \
+     --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+     --role="roles/secretmanager.secretAccessor"
+
+   # Grant access to GITHUB_TOKEN
+   gcloud secrets add-iam-policy-binding GITHUB_TOKEN \
+     --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+     --role="roles/secretmanager.secretAccessor"
+   ```
+
+### Deploy
+
+Once secrets are configured, submit the build to Cloud Build:
+
+```bash
+gcloud builds submit --config cloudbuild.yaml .
+```
+
+This command will build the Docker image, push it to Google Container Registry, and deploy it to Cloud Run. The service will be named `agentic-log-attacker` in the `us-central1` region (these can be customized in `cloudbuild.yaml`).
 
 ## Workflow
 
