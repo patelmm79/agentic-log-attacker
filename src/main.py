@@ -8,6 +8,8 @@ from langgraph.graph import StateGraph, END
 import google.generativeai as genai
 from langgraph.checkpoint.memory import InMemorySaver
 from langchain_core.messages import AnyMessage
+from fastapi import FastAPI, Request
+from pydantic import BaseModel
 
 from src.agents.log_explorer import log_explorer_agent
 from src.agents.issue_creation_agent import issue_creation_agent, Issue
@@ -205,4 +207,24 @@ workflow.add_edge("ask_for_repo_url", END)
 # Compile the graph
 memory = InMemorySaver()
 
-app = workflow.compile(checkpointer=memory)
+full_workflow = workflow.compile(checkpointer=memory)
+
+app = FastAPI()
+
+class Query(BaseModel):
+    user_query: str
+
+@app.get("/")
+async def read_root():
+    return {"message": "Agentic Log Attacker API is running!"}
+
+@app.post("/run_workflow")
+async def run_workflow(query: Query):
+    # Initial state for the workflow
+    initial_state = {"messages": [("user", query.user_query)]}
+    
+    # Run the workflow
+    # The config can be passed to the invoke method if needed for things like thread_id
+    result = full_workflow.invoke(initial_state)
+    
+    return {"result": result}
