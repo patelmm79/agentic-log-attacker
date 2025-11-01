@@ -3,3 +3,4 @@ agentic-log-attacker-key.json
 __pycache__/
 *.pyc
 vllm_gemma/
+.claude/
