@@ -17,7 +17,7 @@ def create_pull_request(branch_name: str, issue: Issue, repo_url: str):
         
         repo.create_pull(
             title=f"Fix: {issue.description}",
-            body=f"This PR fixes the following issue: {issue.description}\n\n**Relevant Log Entries:**\n```\n{"\n".join(issue.log_entries)}\n```",
+            body=f"This PR fixes the following issue: {issue.description}\n\n**Relevant Log Entries:**\n```\n{'\n'.join(issue.log_entries)}\n```",
             head=branch_name,
             base="main", # Assuming the base branch is main
         )
