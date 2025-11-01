@@ -28,9 +28,17 @@ logger = logging.getLogger(__name__)
 
 logger.info(f"GOOGLE_APPLICATION_CREDENTIALS: {os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')}")
 logger.info(f"CLOUD_RUN_REGION: {os.environ.get('CLOUD_RUN_REGION')}")
+logger.info(f"GOOGLE_CLOUD_PROJECT: {os.environ.get('GOOGLE_CLOUD_PROJECT')}")
+logger.info(f"GEMINI_MODEL_NAME: {os.environ.get('GEMINI_MODEL_NAME')}")
 
 # Configure the generative AI model
-genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+gemini_api_key = os.environ.get("GEMINI_API_KEY")
+if not gemini_api_key:
+    logger.error("GEMINI_API_KEY environment variable is not set. The application will not function properly.")
+    # Don't crash on startup, but the API won't work without it
+else:
+    genai.configure(api_key=gemini_api_key)
+    logger.info("Gemini API configured successfully")
 
 class AgentState(TypedDict):
     """Defines the state of the agentic workflow."""
@@ -143,9 +151,10 @@ def solutions_node(state: AgentState):
     """Provides a solution for the identified issues."""
     logger.info("--- Entering Solutions Node ---")
     logger.info(f"Issues in state: {state.get('issues')}")
+    service_name = state.get('cloud_run_service')
     # Pass the first issue if available, otherwise an empty dict
     issue_to_process = state['issues'][0] if state.get('issues') else {}
-    solution = solutions_agent(issue=issue_to_process, user_query=state['messages'][-1].content)
+    solution = solutions_agent(issue=issue_to_process, user_query=state['messages'][-1].content, service_name=service_name)
     logger.info(f"Solutions agent returned: {solution}")
     return {"suggested_fix": solution}
 
@@ -217,11 +226,20 @@ full_workflow = workflow.compile(checkpointer=memory)
 
 app = FastAPI()
 
+@app.on_event("startup")
+async def startup_event():
+    logger.info("=" * 50)
+    logger.info("FastAPI application starting up...")
+    logger.info(f"PORT environment variable: {os.environ.get('PORT', '8080')}")
+    logger.info("Application is ready to receive requests")
+    logger.info("=" * 50)
+
 class Query(BaseModel):
     user_query: str
 
 @app.get("/")
 async def read_root():
+    logger.info("Health check endpoint called")
     return {"message": "Agentic Log Attacker API is running!"}
 
 @app.post("/run_workflow")
