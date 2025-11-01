@@ -17,3 +17,5 @@ steps:
   - '--allow-unauthenticated' # Adjust as needed for authentication
 images:
 - 'gcr.io/$PROJECT_ID/agentic-log-attacker:$COMMIT_SHA'
+options:
+  logging: CLOUD_LOGGING_ONLY
