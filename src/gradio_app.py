@@ -1,66 +1,50 @@
 import os
 import sys
 import gradio as gr
+import uuid
+from langchain_core.messages import HumanMessage
 
-# Add the project root to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-from src.main import app, AgentState
+from src.main import app
 from src.tools.conversation_logger import log_conversation
 
 # Load environment variables
 from dotenv import load_dotenv
 load_dotenv()
 
-def chat_session(message: str, history: list, state: dict):
+def chat_session(message: str, history: list, thread_id: str):
+    """Manages a single chat session, maintaining state between turns."""
     print("--- chat_session called ---")
     print(f"Message: {message}")
-    print(f"Initial State: {state}")
-    """Manages a single chat session, maintaining state between turns."""
-    # If state is empty, initialize it
-    if not state:
-        state = {
-            "cloud_run_service": os.environ.get("CLOUD_RUN_SERVICE"),
-            "git_repo_url": os.environ.get("GIT_REPO_URL", "https://github.com/YOUR_GITHUB_USER/YOUR_GITHUB_REPO"), # IMPORTANT: Replace with your actual GitHub repo URL
-            "user_query": "",
-            "issues": [],
-            "pull_requests": [],
-            "orchestrator_history": [],
-            "log_reviewer_history": [],
-            "github_issue_manager_history": [],
-            "suggested_fix": "",
-            "conversation_history": []
-        }
+    print(f"Thread ID: {thread_id}")
 
-    # Update the state with the new user query
-    state["user_query"] = message
+    if thread_id is None:
+        thread_id = str(uuid.uuid4())
+        print(f"New Thread ID: {thread_id}")
 
     # Invoke the agentic workflow
-    response = app.invoke(state)
+    response = app.invoke(
+        {"messages": [HumanMessage(content=message)]},
+        {"configurable": {"thread_id": thread_id}}
+    )
     print(f"Response from app.invoke: {response}")
 
-    # Update the state for the next turn
-    new_state = response
-
-    # Get the latest response from the orchestrator history or the solution
-    if new_state.get("next_agent") == "ask_for_repo_url":
-        bot_message = new_state["orchestrator_history"][-1]
-    elif new_state.get("suggested_fix"):
-        bot_message = new_state["suggested_fix"]
-    elif new_state.get("log_reviewer_history"):
-        bot_message = new_state["log_reviewer_history"][-1]
-    elif new_state.get("orchestrator_history"):
-        bot_message = new_state["orchestrator_history"][-1]
+    # Get the latest response from the agent
+    next_agent = response.get('next_agent')
+    if next_agent == "github_issue_manager" and 'github_issue_manager_history' in response and response['github_issue_manager_history']:
+        bot_message = response['github_issue_manager_history'][-1]
+    elif 'suggested_fix' in response and response['suggested_fix']:
+        bot_message = response['suggested_fix']
+    elif 'orchestrator_history' in response and response['orchestrator_history']:
+        bot_message = response['orchestrator_history'][-1]
     else:
         bot_message = "I'm sorry, I couldn't process that request."
-    print(f"New State before returning: {new_state}")
     print(f"Final bot_message before returning: {bot_message}")
 
-    return bot_message, new_state
+    return bot_message, thread_id
 
 with gr.Blocks() as demo:
-    # The state object to hold the AgentState across calls
-    state = gr.State({})
+    # The state object to hold the thread_id across calls
+    state = gr.State({"thread_id": None})
 
     gr.Markdown("<h1><center>Log Analysis Agent</center></h1>")
     gr.Markdown("Ask questions about the logs of your Cloud Run service.")
@@ -75,12 +59,13 @@ with gr.Blocks() as demo:
         print(f"Message: {message}")
         print(f"History: {history}")
         print(f"State: {state}")
-        bot_response, new_state = chat_session(message, history, state)
+        thread_id = state["thread_id"]
+        bot_response, new_thread_id = chat_session(message, history, thread_id)
         print(f"Bot Response from chat_session: {bot_response}")
-        print(f"New State from chat_session: {new_state}")
+        print(f"New Thread ID from chat_session: {new_thread_id}")
         updated_history = history + [(message, bot_response)]
         print(f"Updated History before returning: {updated_history}")
-        return updated_history, new_state, ""
+        return updated_history, {"thread_id": new_thread_id}, ""
 
     txt.submit(on_submit, [txt, chatbot, state], [chatbot, state, txt])
 

@@ -1,10 +1,12 @@
 import os
 import sys
+import uuid
+from langchain_core.messages import HumanMessage
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__))))
 
-from src.main import app, AgentState
+from src.main import app
 
 # Load environment variables (if needed for agents like gcp_logging_tool)
 from dotenv import load_dotenv
@@ -13,24 +15,18 @@ load_dotenv()
 def run_test_workflow(user_query: str):
     print(f"\n--- Running workflow for query: {user_query} ---")
 
-    # Initialize AgentState similar to gradio_app.py
-    initial_state: AgentState = {
-        "cloud_run_service": os.environ.get("CLOUD_RUN_SERVICE", "vllm-gemma"), # Default for testing
-        "git_repo_url": os.environ.get("GIT_REPO_URL", "https://github.com/example/repo"), # Default for testing
-        "user_query": user_query,
-        "issues": [],
-        "pull_requests": [],
-        "orchestrator_history": [],
-        "log_reviewer_history": [],
-        "github_issue_manager_history": [],
-        "suggested_fix": "",
-        "conversation_history": []
-    }
+    # Generate a unique thread_id for the conversation
+    thread_id = str(uuid.uuid4())
+    print(f"Thread ID: {thread_id}")
 
     # Invoke the agentic workflow
-    final_state = app.invoke(initial_state)
+    final_state = app.invoke(
+        {"messages": [HumanMessage(content=user_query)]},
+        {"configurable": {"thread_id": thread_id}}
+    )
 
     print("\n--- Final Agent State ---")
+    # The final state is the response from app.invoke
     for key, value in final_state.items():
         print(f"{key}: {value}")
 

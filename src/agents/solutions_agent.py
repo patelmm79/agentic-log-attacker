@@ -11,7 +11,7 @@ def solutions_agent(issue: dict, user_query: str, service_name: str):
     # Use the provided service_name directly
     logs, _, error = get_gcp_logs(service_name=service_name, limit=100)
 
-    model = genai.GenerativeModel('models/gemini-pro-latest')
+    model = genai.GenerativeModel(os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash"))
 
     if error:
         solution_text = f"Could not fetch logs for service '{service_name}' due to an error: {error}. Please check the service name and permissions."
@@ -26,16 +26,19 @@ Here is a user's query: "{user_query}"
 Here are the recent logs for the service '{service_name}':
 {logs}
 
-Based on the user's query and the provided logs, please provide a detailed solution or set of recommendations. Focus on: 
+Based on the user's query and the provided logs, please provide a detailed solution or set of recommendations in a numbered list format. Focus on: 
 1. Identifying any relevant information in the logs related to the query.
 2. Explaining how this information relates to the query.
 3. Proposing concrete, actionable steps to address the user's concern, especially regarding cold start optimization, CUDA graph caching, or build stage improvements. If the logs don't directly address the query, provide general but detailed best practices for the mentioned topics.
 
-Your response should be comprehensive and easy to understand."""
+Your response should be comprehensive, easy to understand, and clearly numbered for each recommendation."""
         print("--- Calling LLM for log analysis ---")
         response = model.generate_content(log_analysis_prompt)
         print("--- LLM call returned ---")
-        solution_text = response.text
+        if response.text:
+            solution_text = response.text
+        else:
+            solution_text = "The model did not return a solution. This might be due to safety settings or an empty response. Please try rephrasing your query."
 
     print(f"Solutions agent final solution_text: {solution_text}")
     return solution_text

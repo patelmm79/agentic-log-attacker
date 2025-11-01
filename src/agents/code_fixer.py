@@ -4,7 +4,7 @@ import re
 import subprocess
 import google.generativeai as genai
 from github import Github
-from .log_reviewer import Issue
+from src.agents.issue_creation_agent import Issue
 
 def create_pull_request(branch_name: str, issue: Issue, repo_url: str):
     """Creates a pull request on GitHub."""
@@ -67,16 +67,52 @@ def code_fixer_agent(issue: Issue, repo_url: str) -> str:
     repo_path = tempfile.mkdtemp()
     subprocess.run(["git", "clone", repo_url, repo_path], check=True)
 
-    # Read all files from the cloned repository
-    code = ""
+    # Get a list of all files in the repository
+    all_files = []
     for root, _, files in os.walk(repo_path):
         for file in files:
+            relative_path = os.path.relpath(os.path.join(root, file), repo_path)
+            all_files.append(relative_path)
+
+    # Use LLM to identify relevant files
+    file_selection_prompt = f"""Given the following issue and log entries, and a list of files in the repository, identify the most relevant files that might need modification to fix the issue.
+
+    Issue: {issue.description}
+
+    Log Entries:
+    {"\n".join(issue.log_entries)}
+
+    All Files in Repository:
+    {"\n".join(all_files)}
+
+    Return a JSON array of the relative file paths that are most relevant. For example: ["src/main.py", "tests/test_main.py"]
+    """
+    file_selection_model = genai.GenerativeModel(os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash"))
+    file_selection_response = file_selection_model.generate_content(file_selection_prompt)
+
+    relevant_files = []
+    try:
+        match = re.search(r"```json\n(.*?)\n```", file_selection_response.text, re.DOTALL)
+        if match:
+            json_text = match.group(1)
+            relevant_files = json.loads(json_text)
+        else:
+            print(f"Error parsing file selection response: No JSON block found\nResponse text: {file_selection_response.text}")
+    except (json.JSONDecodeError, TypeError) as e:
+        print(f"Error parsing file selection response: {e}\nResponse text: {file_selection_response.text}")
+
+    # Read only the relevant files
+    code = ""
+    for file_path in relevant_files:
+        full_path = os.path.join(repo_path, file_path)
+        if os.path.exists(full_path) and os.path.isfile(full_path):
             try:
-                with open(os.path.join(root, file), "r") as f:
-                    code += f"--- {os.path.join(root, file)} ---\n{f.read()}\n"
+                with open(full_path, "r") as f:
+                    code += f"--- {file_path} ---\n{f.read()}\n"
             except Exception:
-                # Ignore files that can't be read
-                pass
+                print(f"Warning: Could not read file {file_path}")
+        else:
+            print(f"Warning: Identified relevant file {file_path} does not exist or is not a file.")
 
     prompt = f"""Analyze the following issue, log entries, and code, and suggest a fix.
 
@@ -93,7 +129,7 @@ def code_fixer_agent(issue: Issue, repo_url: str) -> str:
     The 'code_fix' should be the complete code for the file with the fix applied.
     """
 
-    model = genai.GenerativeModel('models/gemini-pro-latest')
+    model = genai.GenerativeModel(os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash"))
     response = model.generate_content(prompt)
 
     try:

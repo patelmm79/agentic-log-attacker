@@ -1,3 +1,4 @@
+import os
 import json
 from pydantic import BaseModel
 import google.generativeai as genai
@@ -59,7 +60,7 @@ def issue_creation_agent(service_name: str, repo_url: str) -> list[Issue]:
     {logs}
     """
 
-    model = genai.GenerativeModel('models/gemini-pro-latest')
+    model = genai.GenerativeModel(os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash"))
     response = model.generate_content(prompt)
 
     try:

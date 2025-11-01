@@ -3,19 +3,24 @@ import os
 import json
 from github import Github
 import google.generativeai as genai
-from .log_reviewer import Issue
+from src.agents.issue_creation_agent import Issue
 from ..tools.github_tool import get_github_issues
 
-def github_issue_manager_agent(issues: list[Issue], repo_url: str, user_query: str = None):
+def github_issue_manager_agent(issues: list[Issue], repo_url: str, user_query: str = None, issue_content: str = None):
     """Creates GitHub issues for a list of issues."""
-    if not issues and user_query:
-        # If there are no issues, try to create one from the user query
+    if not issues and issue_content:
+        # If no issues are provided, but issue_content is, create an issue from it.
+        # The issue_content is expected to be the full body of the issue.
+        title = issue_content.split('\n')[0] if '\n' in issue_content else issue_content
+        issues = [Issue(description=title, priority="High", log_entries=[issue_content])]
+    elif not issues and user_query:
+        # If there are no issues and no issue_content, try to create one from the user query
         prompt = f"""You are a GitHub issue manager. Your job is to extract the title and body of a GitHub issue from the user's query.
         Return a JSON object with the keys 'title' and 'body'.
 
         User Query: {user_query}
         """
-        model = genai.GenerativeModel('models/gemini-pro-latest')
+        model = genai.GenerativeModel(os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash"))
         response = model.generate_content(prompt)
         raw_response_text = response.text
         print(f"Gemini API raw response: {raw_response_text}")

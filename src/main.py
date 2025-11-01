@@ -2,10 +2,12 @@ import os
 import sys
 import re
 from dotenv import load_dotenv
-from typing import TypedDict
-
+from typing import TypedDict, Annotated
+import operator
 from langgraph.graph import StateGraph, END
 import google.generativeai as genai
+from langgraph.checkpoint.memory import InMemorySaver
+from langchain_core.messages import AnyMessage
 
 from src.agents.log_explorer import log_explorer_agent
 from src.agents.issue_creation_agent import issue_creation_agent, Issue
@@ -13,9 +15,6 @@ from src.agents.github_issue_manager import github_issue_manager_agent
 from src.agents.supervisor import supervisor_agent
 from src.agents.code_fixer import code_fixer_agent
 from src.agents.solutions_agent import solutions_agent
-
-# Add the project root to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Load environment variables
 load_dotenv()
@@ -29,14 +28,13 @@ class AgentState(TypedDict):
     """Defines the state of the agentic workflow."""
     cloud_run_service: str
     git_repo_url: str
-    user_query: str
+    messages: Annotated[list[AnyMessage], operator.add]
     issues: list[Issue]
     pull_requests: list
-    orchestrator_history: list
-    log_reviewer_history: list
+    orchestrator_history: Annotated[list, operator.add]
+    log_reviewer_history: Annotated[list, operator.add]
     github_issue_manager_history: list
     suggested_fix: str
-    conversation_history: list
     next_agent: str
 
 def supervisor_node(state: AgentState):
@@ -45,8 +43,8 @@ def supervisor_node(state: AgentState):
     This node is responsible for coordinating the work of the other agents.
     """
     print("--- Supervisor Node ---")
-    user_query = state['user_query']
-    conversation_history = state.get('conversation_history', [])
+    user_query = state['messages'][-1].content
+    conversation_history = state['messages']
     
     # Attempt to extract the service name from the user query
     match_service = re.search(r"cloud run service\s+([\w-]+)", user_query, re.IGNORECASE)
@@ -60,37 +58,27 @@ def supervisor_node(state: AgentState):
     # Extract next_agent and repo_url from the structured response
     next_agent = response["next_agent"]
     repo_url = response.get("repo_url")
+    issue_content = response.get("issue_content") # Initialize issue_content here
 
     print(f"Supervisor Agent decided next_agent: {next_agent}")
     if repo_url:
         print(f"Supervisor Agent extracted repo_url: {repo_url}")
 
-    # --- TEMPORARY DEBUGGING: Directly call solutions_agent if routed there ---
-    if next_agent == "solutions_agent":
-        print("--- TEMPORARY DEBUGGING: Directly calling solutions_agent ---")
-        issue_to_process = state['issues'][0] if state.get('issues') else {}
-        solution = solutions_agent(issue=issue_to_process, user_query=state.get('user_query'), service_name=service_name)
-        return {
-            "orchestrator_history": response['history'],
-            "cloud_run_service": service_name,
-            "git_repo_url": repo_url, # Use the LLM extracted URL
-            "next_agent": next_agent,
-            "suggested_fix": solution # Populate suggested_fix directly
-        }
-    # --- END TEMPORARY DEBUGGING ---
-
-    return {
+    # Return updates to the state
+    updates = {
         "orchestrator_history": response['history'],
         "cloud_run_service": service_name,
-        "git_repo_url": repo_url, # Use the LLM extracted URL
-        "next_agent": next_agent
+        "git_repo_url": repo_url,
+        "next_agent": next_agent,
+        "issue_content": issue_content
     }
+    return updates
 
 def log_explorer_node(state: AgentState):
     """Answers questions about logs and explores potential issues."""
     print("--- Log Explorer Node ---")
     service_name = state.get('cloud_run_service')
-    user_query = state.get('user_query')
+    user_query = state['messages'][-1].content
 
     print(f"Service Name: {service_name}")
     print(f"User Query: {user_query}")
@@ -98,7 +86,7 @@ def log_explorer_node(state: AgentState):
     result = log_explorer_agent(
         service_name=service_name,
         user_query=user_query,
-        conversation_history=state.get('conversation_history', [])
+        conversation_history=state['messages']
     )
 
     return {"log_reviewer_history": [result], "orchestrator_history": state['orchestrator_history'] + [result]}
@@ -116,7 +104,21 @@ def issue_creation_node(state: AgentState):
 def github_issue_manager_node(state: AgentState):
     """Creates GitHub issues for the identified issues."""
     print("GitHub issue manager agent is running")
-    history = github_issue_manager_agent(issues=state.get('issues', []), repo_url=state['git_repo_url'], user_query=state.get('user_query'))
+    issues_to_create = state.get('issues', [])
+    issue_content = state.get('issue_content')
+    suggested_fix = state.get('suggested_fix') # Get the suggested fix
+
+    if issue_content and suggested_fix and not issues_to_create:
+        # If issue_content and suggested_fix are present, use them to create the issue
+        # issue_content will be the title/short description, suggested_fix will be the body
+        new_issue = Issue(description=issue_content, priority="Medium", log_entries=[suggested_fix])
+        issues_to_create = [new_issue]
+    elif issue_content and not issues_to_create:
+        # Fallback if only issue_content is present
+        new_issue = Issue(description=issue_content, priority="Medium", log_entries=[])
+        issues_to_create = [new_issue]
+
+    history = github_issue_manager_agent(issues=issues_to_create, repo_url=state['git_repo_url'], user_query=state['messages'][-1].content)
     return {"github_issue_manager_history": history['github_issue_manager_history']}
 
 def code_fixer_node(state: AgentState):
@@ -135,7 +137,7 @@ def solutions_node(state: AgentState):
     print(f"Issues in state: {state.get('issues')}")
     # Pass the first issue if available, otherwise an empty dict
     issue_to_process = state['issues'][0] if state.get('issues') else {}
-    solution = solutions_agent(issue=issue_to_process, user_query=state.get('user_query'))
+    solution = solutions_agent(issue=issue_to_process, user_query=state['messages'][-1].content)
     print(f"Solutions agent returned: {solution}")
     return {"suggested_fix": solution}
 
@@ -157,6 +159,18 @@ workflow.add_node("solutions", solutions_node)
 workflow.add_node("ask_for_repo_url", ask_for_repo_url_node)
 
 workflow.set_entry_point("supervisor")
+workflow.add_edge("supervisor", "log_explorer")
+# workflow.add_conditional_edges(
+#     "supervisor",
+#     route_after_supervisor,
+#     {
+#         "log_explorer": "log_explorer",
+#         "github_issue_manager": "github_issue_manager",
+#         "solutions_agent": "solutions",
+#         "ask_for_repo_url": "ask_for_repo_url",
+#         "end": END,
+#     },
+# )
 def route_after_supervisor(state: AgentState):
     """Determines the next node to route to after the supervisor."""
     print("--- Routing after supervisor ---")
@@ -175,6 +189,7 @@ def route_after_supervisor(state: AgentState):
     return next_route
 
 
+workflow.add_edge("github_issue_manager", END)
 workflow.add_edge("code_fixer", END)
 
 
@@ -188,6 +203,6 @@ workflow.add_edge("ask_for_repo_url", END)
 
 
 # Compile the graph
+memory = InMemorySaver()
 
-
-app = workflow.compile()
+app = workflow.compile(checkpointer=memory)

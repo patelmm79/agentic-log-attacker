@@ -1,8 +1,10 @@
-pydantic
+langchain_google_genai
+langchain
 langgraph
-google-generativeai
+pydantic
+fastapi
+uvicorn
+requests
+beautifulsoup4
+python-magic
 python-dotenv
-PyGithub
-google-cloud-logging
-gradio
-pytest
