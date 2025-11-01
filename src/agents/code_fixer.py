@@ -11,13 +11,17 @@ def create_pull_request(branch_name: str, issue: Issue, repo_url: str):
     try:
         token = os.environ["GITHUB_TOKEN"]
         repo_name = repo_url.replace("https://github.com/", "")
-        
+
         g = Github(token)
         repo = g.get_repo(repo_name)
-        
+
+        # Format log entries outside f-string to avoid backslash issues
+        log_entries_text = "\n".join(issue.log_entries)
+        pr_body = f"This PR fixes the following issue: {issue.description}\n\n**Relevant Log Entries:**\n```\n{log_entries_text}\n```"
+
         repo.create_pull(
             title=f"Fix: {issue.description}",
-            body=f"This PR fixes the following issue: {issue.description}\n\n**Relevant Log Entries:**\n```\n{'\n'.join(issue.log_entries)}\n```",
+            body=pr_body,
             head=branch_name,
             base="main", # Assuming the base branch is main
         )
