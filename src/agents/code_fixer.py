@@ -79,15 +79,19 @@ def code_fixer_agent(issue: Issue, repo_url: str) -> str:
             all_files.append(relative_path)
 
     # Use LLM to identify relevant files
+    # Format strings outside f-string to avoid backslash issues
+    log_entries_text = "\n".join(issue.log_entries)
+    all_files_text = "\n".join(all_files)
+
     file_selection_prompt = f"""Given the following issue and log entries, and a list of files in the repository, identify the most relevant files that might need modification to fix the issue.
 
     Issue: {issue.description}
 
     Log Entries:
-    {"\n".join(issue.log_entries)}
+    {log_entries_text}
 
     All Files in Repository:
-    {"\n".join(all_files)}
+    {all_files_text}
 
     Return a JSON array of the relative file paths that are most relevant. For example: ["src/main.py", "tests/test_main.py"]
     """
@@ -118,12 +122,15 @@ def code_fixer_agent(issue: Issue, repo_url: str) -> str:
         else:
             print(f"Warning: Identified relevant file {file_path} does not exist or is not a file.")
 
+    # Format log entries outside f-string to avoid backslash issues
+    log_entries_text_2 = "\n".join(issue.log_entries)
+
     prompt = f"""Analyze the following issue, log entries, and code, and suggest a fix.
 
     Issue: {issue.description}
 
     Log Entries:
-    {"\n".join(issue.log_entries)}
+    {log_entries_text_2}
 
     Code:
     {code}
