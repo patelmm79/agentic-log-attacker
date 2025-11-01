@@ -17,8 +17,10 @@ steps:
   - '--allow-unauthenticated' # Adjust as needed for authentication
   - '--set-env-vars'
   - 'GOOGLE_CLOUD_PROJECT=$PROJECT_ID,CLOUD_RUN_REGION=us-central1,GEMINI_MODEL_NAME=gemini-2.5-flash'
-  - '--set-secrets'
-  - 'GEMINI_API_KEY=GEMINI_API_KEY:latest,GITHUB_TOKEN=GITHUB_TOKEN:latest'
+  - '--timeout'
+  - '300'
+  - '--memory'
+  - '1Gi'
 images:
 - 'gcr.io/$PROJECT_ID/agentic-log-attacker:$COMMIT_SHA'
 options:
