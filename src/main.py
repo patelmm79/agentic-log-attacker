@@ -2,6 +2,7 @@ import os
 import sys
 import re
 import logging
+import uuid
 from dotenv import load_dotenv
 from typing import TypedDict, Annotated
 import operator
@@ -246,9 +247,14 @@ async def read_root():
 async def run_workflow(query: Query):
     # Initial state for the workflow
     initial_state = {"messages": [("user", query.user_query)]}
-    
-    # Run the workflow
-    # The config can be passed to the invoke method if needed for things like thread_id
-    result = full_workflow.invoke(initial_state)
-    
+
+    # Generate a unique thread_id for this workflow execution
+    thread_id = str(uuid.uuid4())
+
+    # Run the workflow with the required config for the checkpointer
+    result = full_workflow.invoke(
+        initial_state,
+        config={"configurable": {"thread_id": thread_id}}
+    )
+
     return {"result": result}
