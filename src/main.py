@@ -9,7 +9,7 @@ import operator
 from langgraph.graph import StateGraph, END
 import google.generativeai as genai
 from langgraph.checkpoint.memory import InMemorySaver
-from langchain_core.messages import AnyMessage
+from langchain_core.messages import AnyMessage, HumanMessage
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
@@ -246,7 +246,7 @@ async def read_root():
 @app.post("/run_workflow")
 async def run_workflow(query: Query):
     # Initial state for the workflow
-    initial_state = {"messages": [("user", query.user_query)]}
+    initial_state = {"messages": [HumanMessage(content=query.user_query)]}
 
     # Generate a unique thread_id for this workflow execution
     thread_id = str(uuid.uuid4())
