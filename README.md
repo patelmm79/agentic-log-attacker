@@ -103,6 +103,109 @@ flowchart TD
 
 **All filters include:** `severity >= DEFAULT` to capture logs at all severity levels (DEFAULT, DEBUG, INFO, WARNING, ERROR, etc.)
 
+## GitHub Integration via Model Context Protocol (MCP)
+
+The system supports GitHub operations through the **Model Context Protocol (MCP)**, a standardized way for AI agents to interact with external tools and services.
+
+### MCP Architecture
+
+```mermaid
+graph LR
+    Agent[LangGraph Agent] --> Tools[MCP Tool Wrappers]
+    Tools --> Client[GitHub MCP Client]
+    Client -->|JSON-RPC 2.0| Server[Remote MCP Server]
+    Server -->|GitHub PAT| GitHub[GitHub API]
+
+    style Agent fill:#4A90E2,color:#fff
+    style Tools fill:#7ED321,color:#fff
+    style Client fill:#F5A623,color:#fff
+    style Server fill:#BD10E0,color:#fff
+    style GitHub fill:#50E3C2,color:#fff
+```
+
+### MCP Components
+
+**1. GitHub MCP Client** (`src/clients/github_mcp_client.py`)
+- JSON-RPC 2.0 protocol implementation over HTTPS
+- Connects to remote MCP server
+- Authentication via GitHub Personal Access Token
+- Context manager support for automatic cleanup
+
+**2. LangChain Tool Wrappers** (`src/tools/github_mcp_tools.py`)
+- `mcp_create_github_issue` - Create GitHub issues
+- `mcp_list_github_issues` - List repository issues
+- `mcp_create_pull_request` - Create pull requests
+- `mcp_get_file_contents` - Read file contents
+- `mcp_search_code` - Search code across GitHub
+- `mcp_list_available_tools` - Discover available operations
+
+### MCP Configuration
+
+Add to your `.env` file:
+
+```bash
+# GitHub Personal Access Token (required)
+GITHUB_TOKEN=ghp_your_github_personal_access_token
+
+# Remote MCP Server URL (optional, uses GitHub Copilot endpoint by default)
+GITHUB_MCP_SERVER_URL=https://api.githubcopilot.com/mcp
+```
+
+### MCP Usage Example
+
+```python
+from src.clients.github_mcp_client import create_github_mcp_client
+
+# Create and use MCP client
+with create_github_mcp_client() as client:
+    # List available tools
+    tools = client.list_tools()
+
+    # Create an issue
+    issue = client.create_issue(
+        owner="octocat",
+        repo="Hello-World",
+        title="Bug report",
+        body="Something is broken"
+    )
+
+    # Create a pull request
+    pr = client.create_pull_request(
+        owner="octocat",
+        repo="Hello-World",
+        title="Fix bug",
+        body="This fixes the issue",
+        head="feature-branch",
+        base="main"
+    )
+```
+
+### Integration with Agents
+
+```python
+from src.tools.github_mcp_tools import ALL_MCP_TOOLS
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langgraph.prebuilt import create_react_agent
+
+# Create agent with MCP tools
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+agent = create_react_agent(llm, tools=ALL_MCP_TOOLS)
+
+# Use the agent
+result = agent.invoke({
+    "messages": [("user", "List open issues in https://github.com/owner/repo")]
+})
+```
+
+### Why Use MCP?
+
+- ✅ **Standardized Protocol:** Uniform interface across different services
+- ✅ **Future-Proof:** Easy to add new tools without changing agent code
+- ✅ **Tool Discovery:** Agents can dynamically discover available operations
+- ✅ **Separation of Concerns:** Clean separation between agent logic and GitHub operations
+
+📖 **Detailed MCP Documentation:** See [README_MCP.md](README_MCP.md) for complete MCP client documentation, troubleshooting, and advanced usage.
+
 ## Setup
 
 1. **Install dependencies:**
@@ -115,14 +218,29 @@ flowchart TD
 
    Create a `.env` file in the root of the project and add the following:
 
-   ```
+   ```bash
+   # Required: Gemini AI API
    GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
+   GEMINI_MODEL_NAME="gemini-2.5-flash"
+
+   # Required: GitHub Integration (PyGithub or MCP)
    GITHUB_TOKEN="YOUR_GITHUB_TOKEN"
    GITHUB_REPOSITORY="YOUR_GITHUB_REPOSITORY"
+
+   # Optional: GitHub MCP Server (for Model Context Protocol)
+   GITHUB_MCP_SERVER_URL="https://api.githubcopilot.com/mcp"
+
+   # Required: Google Cloud Platform
    GOOGLE_CLOUD_PROJECT="YOUR_GOOGLE_CLOUD_PROJECT"
    CLOUD_RUN_SERVICE_NAME="YOUR_CLOUD_RUN_SERVICE_NAME"
    CLOUD_RUN_REGION="YOUR_CLOUD_RUN_REGION"
    ```
+
+   **GitHub Integration Options:**
+   - **PyGithub (Default):** Direct GitHub API integration via `PyGithub` library
+   - **MCP (Optional):** Model Context Protocol for standardized GitHub operations
+     - Requires `GITHUB_MCP_SERVER_URL` environment variable
+     - See [README_MCP.md](README_MCP.md) for setup details
 
 3. **Authenticate with Google Cloud:**
 
@@ -160,6 +278,9 @@ flowchart TD
 - **Purpose:** GitHub integration
 - **Responsibilities:** Creates GitHub issues, checks for duplicates, handles issue metadata
 - **Location:** `src/agents/github_issue_manager.py`
+- **Integration Options:**
+  - **PyGithub:** Direct GitHub API integration (default)
+  - **MCP Client:** Model Context Protocol for standardized GitHub operations
 - **Features:**
   - Duplicate detection (checks open and closed issues)
   - Skips issues closed with "wontfix" label
@@ -259,6 +380,29 @@ These scripts will show:
 - Each filter variation being attempted
 - Which filter successfully finds logs
 - Detailed diagnostic information about failures
+
+### Testing MCP GitHub Integration
+
+Test the Model Context Protocol client:
+
+```bash
+# Run MCP tests
+pytest test_mcp_basic.py
+
+# Run MCP example (interactive)
+python examples/mcp_client_example.py
+```
+
+The example script demonstrates:
+- Connecting to MCP server
+- Listing available tools
+- Creating issues and pull requests
+- Integration with LangChain agents
+
+**Note:** MCP integration requires:
+- Valid `GITHUB_TOKEN` environment variable
+- Accessible MCP server (default: GitHub Copilot endpoint)
+- See [README_MCP.md](README_MCP.md) for troubleshooting
 
 ## Deployment to Google Cloud Run
 
@@ -366,17 +510,25 @@ agentic-log-attacker/
 │   │   ├── solutions_agent.py
 │   │   ├── github_issue_manager.py
 │   │   └── code_fixer.py
-│   ├── tools/                # Utility functions
-│   │   ├── gcp_logging_tool.py
-│   │   └── github_tool.py
+│   ├── clients/              # External service clients
+│   │   └── github_mcp_client.py  # MCP client for GitHub
+│   ├── tools/                # Utility functions & tool wrappers
+│   │   ├── gcp_logging_tool.py   # GCP Cloud Logging
+│   │   ├── github_tool.py        # PyGithub integration
+│   │   └── github_mcp_tools.py   # MCP tool wrappers
 │   └── main.py               # FastAPI app & workflow
+├── examples/
+│   └── mcp_client_example.py # MCP usage examples
 ├── tests/                    # Test suite
+│   └── test_mcp_basic.py     # MCP client tests
 ├── debug_logs.py             # GCP log diagnostics
 ├── test_service_logs.py      # Log retrieval testing
+├── test_mcp_basic.py         # MCP functionality tests
 ├── cloudbuild.yaml           # Cloud Build config
 ├── Dockerfile                # Container definition
 ├── requirements.txt          # Python dependencies
-└── README.md                 # This file
+├── README.md                 # This file
+└── README_MCP.md             # Detailed MCP documentation
 ```
 
 ## Contributing
