@@ -12,7 +12,15 @@ def log_explorer_agent(service_name: str, user_query: str, conversation_history:
     if error:
         return f"I couldn't fetch any logs. Please ensure the service name is correct and that I have the right permissions. Error: {error}"
     if not logs:
-        return "No logs found for the specified service and time range."
+        return f"""No logs found for Cloud Run service '{service_name}'.
+
+Possible reasons:
+1. The service name might be incorrect (check for typos)
+2. The service exists but has no recent logs
+3. The logs might use a different label name (check server logs for filter attempts)
+4. You may not have the correct permissions to access logs for this service
+
+Debug information has been logged to the server console. Please check the uvicorn/FastAPI logs for detailed filter attempts."""
 
     # Pre-process logs for large volumes or specific queries
     processed_logs = logs
