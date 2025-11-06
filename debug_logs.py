@@ -23,16 +23,16 @@ if entries1:
     print("\nFirst entry resource labels:")
     print(entries1[0].resource.labels)
 
-# Test 2: Try the current filter
-print(f"\n=== Test 2: Current filter for {service_name} ===")
-filter2 = f'resource.type = "cloud_run_revision" AND resource.labels.service_name = "{service_name}"'
+# Test 2: Try the current filter with severity
+print(f"\n=== Test 2: Current filter for {service_name} with severity ===")
+filter2 = f'resource.type = "cloud_run_revision" AND resource.labels.service_name = "{service_name}" AND severity >= DEFAULT'
 print(f"Filter: {filter2}")
 entries2 = list(client.list_entries(filter_=filter2, page_size=5))
 print(f"Found {len(entries2)} log entries")
 
-# Test 3: Try with configuration_name (alternative label)
-print(f"\n=== Test 3: Try configuration_name label ===")
-filter3 = f'resource.type = "cloud_run_revision" AND resource.labels.configuration_name = "{service_name}"'
+# Test 3: Try with configuration_name (alternative label) with severity
+print(f"\n=== Test 3: Try configuration_name label with severity ===")
+filter3 = f'resource.type = "cloud_run_revision" AND resource.labels.configuration_name = "{service_name}" AND severity >= DEFAULT'
 print(f"Filter: {filter3}")
 entries3 = list(client.list_entries(filter_=filter3, page_size=5))
 print(f"Found {len(entries3)} log entries")

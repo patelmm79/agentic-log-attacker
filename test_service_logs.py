@@ -22,6 +22,7 @@ service_name = "vllm-gemma-3-1b-it"
 
 print("=" * 70)
 print(f"Testing log retrieval for service: {service_name}")
+print("Note: Filters include severity >= DEFAULT to capture all log levels")
 print("=" * 70)
 
 logs, _, error = get_gcp_logs(service_name=service_name, limit=10)

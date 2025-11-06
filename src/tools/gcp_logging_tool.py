@@ -36,13 +36,14 @@ def get_gcp_logs(service_name: str, limit: int = 500, page_token: str = None, st
             return "", None, e
 
     # Try multiple filter variations for Cloud Run logs
+    # Include severity >= DEFAULT to capture all log levels including DEFAULT
     filter_variations = [
         # Original filter with service_name
-        f'resource.type = "cloud_run_revision" AND resource.labels.service_name = "{service_name}"{time_filter}',
+        f'resource.type = "cloud_run_revision" AND resource.labels.service_name = "{service_name}" AND severity >= DEFAULT{time_filter}',
         # Try with configuration_name (common alternative)
-        f'resource.type = "cloud_run_revision" AND resource.labels.configuration_name = "{service_name}"{time_filter}',
+        f'resource.type = "cloud_run_revision" AND resource.labels.configuration_name = "{service_name}" AND severity >= DEFAULT{time_filter}',
         # Try matching any label value (broader search)
-        f'resource.type = "cloud_run_revision" AND ("{service_name}"){time_filter}',
+        f'resource.type = "cloud_run_revision" AND ("{service_name}") AND severity >= DEFAULT{time_filter}',
     ]
 
     try:
