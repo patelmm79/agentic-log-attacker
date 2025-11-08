@@ -14,10 +14,13 @@ def supervisor_agent(user_query: str, conversation_history: list):
             history_lines.append(f"Agent: {msg.content}")
     history_str = "\n".join(history_lines)
 
-    prompt = f"""You are a supervisor agent. Your job is to route user requests to the correct agent.
-    If the user wants to create a GitHub issue, you must also extract the GitHub repository URL from the user's query.
-    If a full URL is not provided, assume the owner is 'example' and construct the full URL.
-    If you cannot confidently determine the 'repo_url' for a GitHub issue creation request, return {{"next_agent": "ask_for_repo_url"}}.
+    prompt = f"""You are a supervisor agent. Your job is to analyze user requests and extract key information.
+
+    IMPORTANT: Always extract the GitHub repository URL if mentioned in the query, regardless of what the user is asking to do.
+    The repo_url should be in the format: https://github.com/owner/repo
+
+    If the user mentions creating GitHub issues or fixes, extract the repo_url and set it in your response.
+    If a full URL is not provided but a repository name is mentioned, construct the full URL.
 
     When the user asks to create a GitHub issue containing info for "recommendation X" (where X is a number), you MUST find the full text of that recommendation from the `conversation_history` (which is provided as `history_str`) and include it in the `issue_content` field of your JSON response. Pay close attention to the numbering of the recommendations in the `history_str`.
 
@@ -27,31 +30,25 @@ def supervisor_agent(user_query: str, conversation_history: list):
     - **github_issue_manager**: Interacts with GitHub to create new issues and review & manage existing issues. Requires a 'repo_url'.
     - **solutions_agent**: Provides solutions or recommendations for issues.
 
-    Here are some examples of user queries and the correct agent to route to:
+    Here are some examples of user queries and the information to extract:
 
     **User Query:** "for cloud run service vllm-gemma-3-1b-it, can you tell if the performance has improved from yesterday's initial requests to today's?"
     **Response:** {{"next_agent": "log_explorer"}}
 
+    **User Query:** "Review logs in region 'us-central1' and create fixes for any issues. The GitHub repository is: https://github.com/patelmm79/vllm-container-prewarm"
+    **Response:** {{"next_agent": "log_explorer", "repo_url": "https://github.com/patelmm79/vllm-container-prewarm"}}
+
     **User Query:** "I need a solution for the high latency in my 'vllm-gemma' service."
     **Response:** {{"next_agent": "solutions_agent"}}
 
-    **User Query:** "How can I optimize the cold start time for my Cloud Run service?"
-    **Response:** {{"next_agent": "solutions_agent"}}
-
-    **User Query:** "is there a way to execute or cache the \"Capturing CUDA graphs (mixed prefill-decode, PIECEWISE): \" part during cloud build stage or during the first cold start, so that subsequent cold starts can be shorter?"
-    **Response:** {{"next_agent": "solutions_agent"}}
-
     **User Query:** "please create a github issue to repository agentic-log-attacker, containing info for recommendation 6"
-    **Response:** {{"next_agent": "github_issue_manager", "repo_url": "https://github.com/example/agentic-log-attacker", "issue_content": "Consider CUDA Compilation Configuration: Explicitly setting `TORCH_CUDA_ARCH_LIST` (if the GPU architecture is known) could lead to slightly faster compilation and more optimized kernels."}}
+    **Response:** {{"next_agent": "github_issue_manager", "repo_url": "https://github.com/patelmm79/agentic-log-attacker", "issue_content": "Consider CUDA Compilation Configuration: Explicitly setting `TORCH_CUDA_ARCH_LIST` (if the GPU architecture is known) could lead to slightly faster compilation and more optimized kernels."}}
 
     **User Query:** "please create a github issue to repository vllm-container-prewarm, as a feature request to enable the \"Caching Compiled Kernels\" option"
-    **Response:** {{"next_agent": "github_issue_manager", "repo_url": "https://github.com/example/vllm-container-prewarm"}}
+    **Response:** {{"next_agent": "github_issue_manager", "repo_url": "https://github.com/patelmm79/vllm-container-prewarm"}}
 
-    **User Query:** "no, I want you to create the issue in Github"
-    **Response:** {{"next_agent": "github_issue_manager", "repo_url": "https://github.com/example/vllm-container-prewarm"}}
-
-    **User Query:** "create a github issue"
-    **Response:** {{"next_agent": "ask_for_repo_url"}}
+    **User Query:** "Analyze the logs and create GitHub issues for problems in https://github.com/myuser/myrepo"
+    **Response:** {{"next_agent": "log_explorer", "repo_url": "https://github.com/myuser/myrepo"}}
 
     The conversation history is:
     {history_str}
