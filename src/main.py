@@ -55,20 +55,25 @@ class AgentState(TypedDict):
     next_agent: str
 
 def supervisor_node(state: AgentState):
-    """The entry point of the workflow. 
-    
+    """The entry point of the workflow.
+
     This node is responsible for coordinating the work of the other agents.
     """
     logger.info("--- Supervisor Node ---")
     user_query = state['messages'][-1].content
     conversation_history = state['messages']
-    
-    # Attempt to extract the service name from the user query
-    match_service = re.search(r"cloud run service\s+([\w-]+)", user_query, re.IGNORECASE)
-    service_name = state.get("cloud_run_service") # Default to value from environment
-    if match_service:
-        service_name = match_service.group(1)
-        logger.info(f"Extracted service name from query: {service_name}")
+
+    # Get service name from state (passed from API request)
+    service_name = state.get("cloud_run_service")
+
+    # If not provided in state, attempt to extract from the user query as fallback
+    if not service_name:
+        match_service = re.search(r"cloud run service\s+([\w-]+)", user_query, re.IGNORECASE)
+        if match_service:
+            service_name = match_service.group(1)
+            logger.info(f"Extracted service name from query: {service_name}")
+    else:
+        logger.info(f"Using service name from request: {service_name}")
 
     response = supervisor_agent(user_query=user_query, conversation_history=conversation_history)
 
@@ -237,6 +242,7 @@ async def startup_event():
 
 class Query(BaseModel):
     user_query: str
+    service_name: str = None  # Optional, can be extracted from query if not provided
 
 @app.get("/")
 async def read_root():
@@ -246,7 +252,10 @@ async def read_root():
 @app.post("/run_workflow")
 async def run_workflow(query: Query):
     # Initial state for the workflow
-    initial_state = {"messages": [HumanMessage(content=query.user_query)]}
+    initial_state = {
+        "messages": [HumanMessage(content=query.user_query)],
+        "cloud_run_service": query.service_name
+    }
 
     # Generate a unique thread_id for this workflow execution
     thread_id = str(uuid.uuid4())
