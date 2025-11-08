@@ -191,44 +191,37 @@ workflow.add_node("code_fixer", code_fixer_node)
 workflow.add_node("solutions", solutions_node)
 workflow.add_node("ask_for_repo_url", ask_for_repo_url_node)
 
+def route_after_log_explorer(state: AgentState):
+    """Determines if we should create issues after exploring logs."""
+    logger.info("--- Routing after log_explorer ---")
+    # Check if user wants to create GitHub issues (repo_url is set)
+    if state.get('git_repo_url'):
+        logger.info("Repo URL found, routing to issue_creation")
+        return "issue_creation"
+    else:
+        logger.info("No repo URL, ending workflow")
+        return "end"
+
 workflow.set_entry_point("supervisor")
 workflow.add_edge("supervisor", "log_explorer")
-# workflow.add_conditional_edges(
-#     "supervisor",
-#     route_after_supervisor,
-#     {
-#         "log_explorer": "log_explorer",
-#         "github_issue_manager": "github_issue_manager",
-#         "solutions_agent": "solutions",
-#         "ask_for_repo_url": "ask_for_repo_url",
-#         "end": END,
-#     },
-# )
-def route_after_supervisor(state: AgentState):
-    """Determines the next node to route to after the supervisor."""
-    logger.info("--- Routing after supervisor ---")
-    next_agent = state.get("next_agent")
-    if next_agent == "log_explorer":
-        return "log_explorer"
-    elif next_agent == "github_issue_manager":
-        return "github_issue_manager"
-    elif next_agent == "solutions_agent":
-        return "solutions"
-    elif next_agent == "ask_for_repo_url":
-        return "ask_for_repo_url"
-    else:
-        next_route = "end"
-    logger.info(f"--- route_after_supervisor returning: {next_route} ---")
-    return next_route
 
+# After log_explorer, conditionally go to issue_creation if repo_url is provided
+workflow.add_conditional_edges(
+    "log_explorer",
+    route_after_log_explorer,
+    {
+        "issue_creation": "issue_creation",
+        "end": END
+    }
+)
 
+# After issue_creation, go to github_issue_manager to create GitHub issues
+workflow.add_edge("issue_creation", "github_issue_manager")
+
+# Terminal nodes
 workflow.add_edge("github_issue_manager", END)
 workflow.add_edge("code_fixer", END)
-
-
 workflow.add_edge("solutions", END)
-
-
 workflow.add_edge("ask_for_repo_url", END)
 
 
@@ -253,6 +246,7 @@ async def startup_event():
 class Query(BaseModel):
     user_query: str
     service_name: str = None  # Optional, can be extracted from query if not provided
+    repo_url: str = None  # Optional, GitHub repository URL for issue creation
 
 @app.get("/")
 async def read_root():
@@ -264,7 +258,8 @@ async def run_workflow(query: Query):
     # Initial state for the workflow
     initial_state = {
         "messages": [HumanMessage(content=query.user_query)],
-        "cloud_run_service": query.service_name
+        "cloud_run_service": query.service_name,
+        "git_repo_url": query.repo_url
     }
 
     # Generate a unique thread_id for this workflow execution
