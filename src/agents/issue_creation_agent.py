@@ -14,15 +14,18 @@ class Issue(BaseModel):
 
 def issue_creation_agent(service_name: str, repo_url: str) -> list[Issue]:
     """Analyzes log files and generates issues in every case."""
-    
+
+    print(f"[issue_creation_agent] Fetching logs for service: {service_name}")
     logs, _, error = get_gcp_logs(service_name=service_name, limit=1000)
 
     if error:
-        print(f"Error fetching logs: {error}")
+        print(f"[issue_creation_agent] Error fetching logs: {error}")
         return []
     if not logs:
-        print("No logs found for the specified service and time range.")
+        print("[issue_creation_agent] No logs found for the specified service and time range.")
         return []
+
+    print(f"[issue_creation_agent] Successfully fetched {len(logs.splitlines())} log lines")
 
     existing_issues = []
     if repo_url:
@@ -61,15 +64,18 @@ def issue_creation_agent(service_name: str, repo_url: str) -> list[Issue]:
     """
 
     model = genai.GenerativeModel(os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash"))
+    print("[issue_creation_agent] Calling Gemini API to analyze logs...")
     response = model.generate_content(prompt)
 
     try:
         # The response may contain markdown, so we need to extract the JSON part
+        print(f"[issue_creation_agent] Raw Gemini response: {response.text[:500]}...")
         json_text = response.text.strip(" `").lstrip("json\n").rstrip("\n`")
         issues_data = json.loads(json_text)
         issues = [Issue(**issue_data) for issue_data in issues_data]
+        print(f"[issue_creation_agent] Successfully parsed {len(issues)} issues from Gemini response")
         return issues
     except (json.JSONDecodeError, TypeError) as e:
-        print(f"Error parsing response from Gemini API: {e}")
-        print(f"Response text: {response.text}")
+        print(f"[issue_creation_agent] ERROR parsing response from Gemini API: {e}")
+        print(f"[issue_creation_agent] Full response text: {response.text}")
         return []

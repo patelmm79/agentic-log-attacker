@@ -129,28 +129,54 @@ def issue_creation_node(state: AgentState):
     service_name = state.get('cloud_run_service')
     repo_url = state.get('git_repo_url')
 
+    logger.info(f"Service name: {service_name}")
+    logger.info(f"Repo URL: {repo_url}")
+
     issues = issue_creation_agent(service_name=service_name, repo_url=repo_url)
-    logger.info(f"Issue creation agent returned: {issues}")
+    logger.info(f"Issue creation agent returned {len(issues)} issues")
+    if issues:
+        for i, issue in enumerate(issues):
+            logger.info(f"Issue {i+1}: {issue.description} (Priority: {issue.priority})")
+    else:
+        logger.warning("No issues were created by issue_creation_agent")
+
     return {"issues": issues}
 
 def github_issue_manager_node(state: AgentState):
     """Creates GitHub issues for the identified issues."""
-    logger.info("GitHub issue manager agent is running")
+    logger.info("--- GitHub Issue Manager Node ---")
     issues_to_create = state.get('issues', [])
     issue_content = state.get('issue_content')
-    suggested_fix = state.get('suggested_fix') # Get the suggested fix
+    suggested_fix = state.get('suggested_fix')
+    repo_url = state.get('git_repo_url')
+
+    logger.info(f"Issues from state: {len(issues_to_create)}")
+    logger.info(f"Repo URL: {repo_url}")
+    logger.info(f"Issue content: {issue_content}")
 
     if issue_content and suggested_fix and not issues_to_create:
         # If issue_content and suggested_fix are present, use them to create the issue
         # issue_content will be the title/short description, suggested_fix will be the body
         new_issue = Issue(description=issue_content, priority="Medium", log_entries=[suggested_fix])
         issues_to_create = [new_issue]
+        logger.info("Created issue from issue_content and suggested_fix")
     elif issue_content and not issues_to_create:
         # Fallback if only issue_content is present
         new_issue = Issue(description=issue_content, priority="Medium", log_entries=[])
         issues_to_create = [new_issue]
+        logger.info("Created issue from issue_content only")
 
-    history = github_issue_manager_agent(issues=issues_to_create, repo_url=state['git_repo_url'], user_query=state['messages'][-1].content)
+    if not issues_to_create:
+        logger.warning("No issues to create!")
+        return {"github_issue_manager_history": ["No issues to create"]}
+
+    if not repo_url:
+        logger.error("No repo_url provided!")
+        return {"github_issue_manager_history": ["Error: No repository URL provided"]}
+
+    logger.info(f"Calling github_issue_manager_agent with {len(issues_to_create)} issues")
+    history = github_issue_manager_agent(issues=issues_to_create, repo_url=repo_url, user_query=state['messages'][-1].content)
+    logger.info(f"GitHub issue manager result: {history}")
     return {"github_issue_manager_history": history['github_issue_manager_history']}
 
 def code_fixer_node(state: AgentState):
