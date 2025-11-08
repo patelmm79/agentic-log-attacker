@@ -77,32 +77,23 @@ def github_issue_manager_agent(issues: list[Issue], repo_url: str, user_query: s
             print(f"\n[github_issue_manager] Issue {i+1}/{len(issues)}: '{title}'")
             print(f"[github_issue_manager] Priority: {issue.priority}")
 
+            # Check if this issue already exists (open or closed)
             if title in existing_titles:
                 print(f"[github_issue_manager] ⚠️  Title matches existing issue, checking status...")
-                # Check if the issue is open or closed with "wontfix"
                 for existing_issue in existing_issues:
                     if existing_issue['title'] == title:
-                        if existing_issue['state'] == 'open':
-                            reason = f"Issue '{title[:100]}...' already exists and is open (#{existing_issue.get('number', 'unknown')})"
-                            print(f"[github_issue_manager] ❌ SKIPPED: {reason}")
-                            skipped_issues += 1
-                            skipped_reasons.append(reason)
-                            break
-                        elif existing_issue['state'] == 'closed' and 'wontfix' in existing_issue['labels']:
-                            reason = f"Issue '{title[:100]}...' is closed with 'wontfix' label (#{existing_issue.get('number', 'unknown')})"
-                            print(f"[github_issue_manager] ❌ SKIPPED: {reason}")
-                            skipped_issues += 1
-                            skipped_reasons.append(reason)
-                            break
-                else:
-                    # Duplicate title but not open or wontfix, proceed to create
-                    print(f"[github_issue_manager] ✓ Duplicate title but issue is closed, will create new one")
-                    pass
+                        state = existing_issue['state']
+                        number = existing_issue.get('number', 'unknown')
+                        reason = f"Issue '{title[:100]}...' already exists as {state} issue (#{number})"
+                        print(f"[github_issue_manager] ❌ SKIPPED: {reason}")
+                        skipped_issues += 1
+                        skipped_reasons.append(reason)
+                        break
             else:
                 print(f"[github_issue_manager] ✓ No duplicate found, creating new issue...")
 
-            # Only create if we didn't skip in the above logic
-            if title not in existing_titles or (title in existing_titles and not any(r.startswith(f"Issue '{title[:100]}") for r in skipped_reasons)):
+            # Only create if title is NOT in existing titles
+            if title not in existing_titles:
                 log_entries_str = "\n".join(issue.log_entries)
                 body = f"""{issue.description}
 

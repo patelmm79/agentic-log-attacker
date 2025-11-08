@@ -16,10 +16,11 @@ def get_github_issues(repo_url: str) -> list[dict]:
         for issue in issues:
             issue_list.append({
                 "title": issue.title,
+                "number": issue.number,
                 "state": issue.state,
                 "labels": [label.name for label in issue.labels]
             })
-        
+
         return issue_list
         
     except Exception as e:
