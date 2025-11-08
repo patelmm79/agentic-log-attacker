@@ -74,7 +74,14 @@ def supervisor_node(state: AgentState):
             service_name = match_service.group(1)
             logger.info(f"Extracted service name from query: {service_name}")
         else:
-            logger.warning(f"Could not extract service name from query: {user_query}")
+            error_msg = "No Cloud Run service name specified. Please provide a service name in your query (e.g., 'for cloud run service my-service') or in the API request."
+            logger.error(error_msg)
+            # Return an error message to the user
+            return {
+                "messages": [HumanMessage(content=error_msg)],
+                "next_agent": "END",
+                "cloud_run_service": None
+            }
     else:
         logger.info(f"Using service name from request: {service_name}")
 

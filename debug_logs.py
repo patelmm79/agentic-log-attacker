@@ -8,7 +8,7 @@ from google.cloud.logging import Client
 parser = argparse.ArgumentParser(description='Debug Cloud Run logging configuration')
 parser.add_argument('--hours', type=int, default=24, help='Number of hours to look back (default: 24)')
 parser.add_argument('--days', type=int, help='Number of days to look back (overrides --hours)')
-parser.add_argument('--service', type=str, default='vllm-gemma-3-1b-it', help='Service name to query')
+parser.add_argument('--service', type=str, required=True, help='Service name to query (required)')
 args = parser.parse_args()
 
 # Set up client

@@ -23,17 +23,26 @@ def get_gcp_logs(service_name: str, limit: int = 500, page_token: str = None, st
     logger.info(f"Fetching logs for service: {service_name}, Project ID: {project_id}")
     client = Client(project=project_id)
 
-    # Build time filter component if provided
+    # Build time filter component if provided, otherwise use default 24-hour lookback
     time_filter = ""
+    auto_retry_48h = False
+
     if start_time and end_time:
         try:
             start = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
             end = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
-            if end - start > timedelta(days=1):
-                raise ValueError("Time range cannot exceed 24 hours.")
+            if end - start > timedelta(days=2):
+                raise ValueError("Time range cannot exceed 48 hours.")
             time_filter = f' AND timestamp >= "{start_time}" AND timestamp <= "{end_time}"'
         except ValueError as e:
             return "", None, e
+    else:
+        # Default to 24-hour lookback, with automatic 48-hour retry if no logs found
+        auto_retry_48h = True
+        end = datetime.utcnow()
+        start = end - timedelta(hours=24)
+        time_filter = f' AND timestamp >= "{start.isoformat()}Z" AND timestamp <= "{end.isoformat()}Z"'
+        logger.info(f"Using default 24-hour lookback: {start.isoformat()}Z to {end.isoformat()}Z")
 
     # Try multiple filter variations for Cloud Run logs
     # Include severity >= DEFAULT to capture all log levels including DEFAULT
@@ -42,13 +51,11 @@ def get_gcp_logs(service_name: str, limit: int = 500, page_token: str = None, st
         f'resource.type = "cloud_run_revision" AND resource.labels.service_name = "{service_name}" AND severity >= DEFAULT{time_filter}',
         # Try with configuration_name (common alternative)
         f'resource.type = "cloud_run_revision" AND resource.labels.configuration_name = "{service_name}" AND severity >= DEFAULT{time_filter}',
-        # Try matching any label value (broader search)
-        f'resource.type = "cloud_run_revision" AND ("{service_name}") AND severity >= DEFAULT{time_filter}',
     ]
 
     try:
         for i, log_filter in enumerate(filter_variations):
-            logger.info(f"[Filter {i+1}/3] Trying: {log_filter}")
+            logger.info(f"[Filter {i+1}/{len(filter_variations)}] Trying: {log_filter}")
             entries = client.list_entries(
                 filter_=log_filter,
                 order_by=DESCENDING,
@@ -63,8 +70,36 @@ def get_gcp_logs(service_name: str, limit: int = 500, page_token: str = None, st
             else:
                 logger.warning(f"✗ No logs found with filter variation {i+1}")
 
+        # If no logs found and we used the default 24-hour window, try 48 hours
+        if auto_retry_48h:
+            logger.info("No logs found in 24-hour window. Retrying with 48-hour window...")
+            end = datetime.utcnow()
+            start = end - timedelta(hours=48)
+            time_filter_48h = f' AND timestamp >= "{start.isoformat()}Z" AND timestamp <= "{end.isoformat()}Z"'
+
+            filter_variations_48h = [
+                f'resource.type = "cloud_run_revision" AND resource.labels.service_name = "{service_name}" AND severity >= DEFAULT{time_filter_48h}',
+                f'resource.type = "cloud_run_revision" AND resource.labels.configuration_name = "{service_name}" AND severity >= DEFAULT{time_filter_48h}',
+            ]
+
+            for i, log_filter in enumerate(filter_variations_48h):
+                logger.info(f"[48h Filter {i+1}/{len(filter_variations_48h)}] Trying: {log_filter}")
+                entries = client.list_entries(
+                    filter_=log_filter,
+                    order_by=DESCENDING,
+                    page_size=limit
+                )
+                log_entries = [str(entry) for i, entry in enumerate(entries) if i < limit]
+
+                if log_entries:
+                    logs = "\n".join(log_entries)
+                    logger.info(f"✓ SUCCESS! Found {len(log_entries)} log entries in 48-hour window using filter variation {i+1}")
+                    return logs, None, None
+                else:
+                    logger.warning(f"✗ No logs found with 48h filter variation {i+1}")
+
         # If no filter worked, return empty
-        logger.error(f"FAILED: No logs found with any of the {len(filter_variations)} filter variations for service '{service_name}'")
+        logger.error(f"FAILED: No logs found with any of the filter variations for service '{service_name}'")
         return "", None, None
 
     except Exception as e:
