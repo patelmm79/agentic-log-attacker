@@ -68,10 +68,13 @@ def supervisor_node(state: AgentState):
 
     # If not provided in state, attempt to extract from the user query as fallback
     if not service_name:
-        match_service = re.search(r"cloud run service\s+([\w-]+)", user_query, re.IGNORECASE)
+        # Try to match with optional quotes around the service name
+        match_service = re.search(r"cloud run service\s+['\"]?([\w-]+)['\"]?", user_query, re.IGNORECASE)
         if match_service:
             service_name = match_service.group(1)
             logger.info(f"Extracted service name from query: {service_name}")
+        else:
+            logger.warning(f"Could not extract service name from query: {user_query}")
     else:
         logger.info(f"Using service name from request: {service_name}")
 
