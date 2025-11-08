@@ -29,37 +29,53 @@ def issue_creation_agent(service_name: str, repo_url: str) -> list[Issue]:
 
     existing_issues = []
     if repo_url:
+        print(f"[issue_creation_agent] Fetching existing issues from {repo_url}")
         existing_issues = get_github_issues(repo_url)
-    existing_issues_str = "\n".join(str(issue) for issue in existing_issues)
+        print(f"[issue_creation_agent] Found {len(existing_issues)} existing issues")
+    else:
+        print("[issue_creation_agent] No repo_url provided, skipping duplicate check")
 
-    prompt = f"""Analyze the following logs and identify any potential new issues.
-    Avoid creating issues that are duplicates of existing ones.
+    existing_issues_str = "\n".join(str(issue) for issue in existing_issues) if existing_issues else "No existing issues."
 
-    Existing Issues:
+    prompt = f"""Analyze the following logs and identify any potential issues, errors, warnings, or problems that should be tracked.
+
+    IMPORTANT INSTRUCTIONS:
+    - Look for actual problems, errors, warnings, misconfigurations, or performance issues
+    - Each issue should be actionable and specific
+    - Avoid creating issues that are duplicates of existing ones (listed below)
+    - If you find problems in the logs, you MUST create issues for them
+    - Return a JSON array even if there are no issues (return empty array [])
+
+    Existing Issues (do not duplicate these):
     {existing_issues_str}
 
-    For each new issue, provide a description, a priority (High, Medium, or Low), and the relevant log entries.
-    Return the output as a JSON array of objects, where each object has a 'description', 'priority', and 'log_entries' key.
-    For example:
+    For each new issue you identify, provide:
+    - description: A clear, concise title describing the issue
+    - priority: "High" (critical/blocking), "Medium" (important), or "Low" (minor)
+    - log_entries: Array of relevant log lines that show the problem
+
+    Output Format (JSON array):
     [
         {{
-            "description": "Null pointer exception in user service",
+            "description": "404 errors on /chat/completions endpoint",
             "priority": "High",
             "log_entries": [
-                "log entry 1",
-                "log entry 2"
+                "POST /chat/completions - 404 Not Found",
+                "Error: Endpoint not registered"
             ]
         }},
         {{
-            "description": "Database connection timeout",
+            "description": "ulimit warning may cause file descriptor exhaustion",
             "priority": "Medium",
             "log_entries": [
-                "log entry 3"
+                "WARNING: Failed to increase ulimit"
             ]
         }}
     ]
 
-    Logs:
+    If no issues are found, return: []
+
+    Logs to analyze:
     {logs}
     """
 
@@ -72,10 +88,29 @@ def issue_creation_agent(service_name: str, repo_url: str) -> list[Issue]:
         print(f"[issue_creation_agent] Raw Gemini response: {response.text[:500]}...")
         json_text = response.text.strip(" `").lstrip("json\n").rstrip("\n`")
         issues_data = json.loads(json_text)
+
+        if not isinstance(issues_data, list):
+            print(f"[issue_creation_agent] ⚠️ WARNING: Expected JSON array but got {type(issues_data)}")
+            print(f"[issue_creation_agent] Full response: {response.text}")
+            return []
+
+        if len(issues_data) == 0:
+            print("[issue_creation_agent] ℹ️ Gemini did not identify any issues in the logs")
+            print("[issue_creation_agent] This could mean:")
+            print("  - The logs don't contain any errors or warnings")
+            print("  - The issues already exist in the repository")
+            print("  - The logs are purely informational")
+            return []
+
         issues = [Issue(**issue_data) for issue_data in issues_data]
-        print(f"[issue_creation_agent] Successfully parsed {len(issues)} issues from Gemini response")
+        print(f"[issue_creation_agent] ✅ Successfully parsed {len(issues)} issue(s) from Gemini response")
+        for i, issue in enumerate(issues):
+            print(f"  {i+1}. {issue.description} (Priority: {issue.priority})")
+
         return issues
     except (json.JSONDecodeError, TypeError) as e:
-        print(f"[issue_creation_agent] ERROR parsing response from Gemini API: {e}")
+        print(f"[issue_creation_agent] ❌ ERROR parsing response from Gemini API: {e}")
+        print(f"[issue_creation_agent] This likely means Gemini didn't return valid JSON")
         print(f"[issue_creation_agent] Full response text: {response.text}")
+        print("[issue_creation_agent] Returning empty issue list")
         return []

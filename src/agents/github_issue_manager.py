@@ -65,24 +65,44 @@ def github_issue_manager_agent(issues: list[Issue], repo_url: str, user_query: s
 
     created_issues = 0
     skipped_issues = 0
-    for issue in issues:
+    skipped_reasons = []
+    error_messages = []
+
+    print(f"\n[github_issue_manager] Processing {len(issues)} issues...")
+    print(f"[github_issue_manager] Found {len(existing_issues)} existing issues in repository")
+
+    for i, issue in enumerate(issues):
         try:
             title = issue.description[:256] # Use the description as the title, up to 256 chars
+            print(f"\n[github_issue_manager] Issue {i+1}/{len(issues)}: '{title}'")
+            print(f"[github_issue_manager] Priority: {issue.priority}")
+
             if title in existing_titles:
+                print(f"[github_issue_manager] ⚠️  Title matches existing issue, checking status...")
                 # Check if the issue is open or closed with "wontfix"
                 for existing_issue in existing_issues:
                     if existing_issue['title'] == title:
                         if existing_issue['state'] == 'open':
-                            print(f"Skipping issue '{title}' as it already exists and is open.")
+                            reason = f"Issue '{title[:100]}...' already exists and is open (#{existing_issue.get('number', 'unknown')})"
+                            print(f"[github_issue_manager] ❌ SKIPPED: {reason}")
                             skipped_issues += 1
+                            skipped_reasons.append(reason)
                             break
                         elif existing_issue['state'] == 'closed' and 'wontfix' in existing_issue['labels']:
-                            print(f"Skipping issue '{title}' as it already exists and is closed with 'wontfix' label.")
+                            reason = f"Issue '{title[:100]}...' is closed with 'wontfix' label (#{existing_issue.get('number', 'unknown')})"
+                            print(f"[github_issue_manager] ❌ SKIPPED: {reason}")
                             skipped_issues += 1
+                            skipped_reasons.append(reason)
                             break
                 else:
-                    continue
+                    # Duplicate title but not open or wontfix, proceed to create
+                    print(f"[github_issue_manager] ✓ Duplicate title but issue is closed, will create new one")
+                    pass
             else:
+                print(f"[github_issue_manager] ✓ No duplicate found, creating new issue...")
+
+            # Only create if we didn't skip in the above logic
+            if title not in existing_titles or (title in existing_titles and not any(r.startswith(f"Issue '{title[:100]}") for r in skipped_reasons)):
                 log_entries_str = "\n".join(issue.log_entries)
                 body = f"""{issue.description}
 
@@ -91,13 +111,38 @@ def github_issue_manager_agent(issues: list[Issue], repo_url: str, user_query: s
 {log_entries_str}
 ```
 """
-                repo.create_issue(
+                print(f"[github_issue_manager] 📝 Calling GitHub API to create issue...")
+                result = repo.create_issue(
                     title=title,
                     body=body,
                     labels=[issue.priority]
                 )
+                print(f"[github_issue_manager] ✅ SUCCESS! Created issue #{result.number}: {result.html_url}")
                 created_issues += 1
         except Exception as e:
-            print(f"Error creating GitHub issue: {e}")
+            error_msg = f"Error creating issue '{title[:100]}...': {str(e)}"
+            print(f"[github_issue_manager] ❌ ERROR: {error_msg}")
+            error_messages.append(error_msg)
 
-    return {"github_issue_manager_history": [f"Created {created_issues} GitHub issues, skipped {skipped_issues}."]}
+    # Build detailed status message
+    status_parts = [f"Created {created_issues} GitHub issue(s), skipped {skipped_issues}."]
+
+    if skipped_issues > 0:
+        status_parts.append("\n\nSkipped issues:")
+        for reason in skipped_reasons:
+            status_parts.append(f"  - {reason}")
+
+    if error_messages:
+        status_parts.append("\n\nErrors encountered:")
+        for error in error_messages:
+            status_parts.append(f"  - {error}")
+
+    if created_issues == 0 and skipped_issues == 0 and not error_messages:
+        status_parts.append("\n\n⚠️ No issues were created or skipped. Possible reasons:")
+        status_parts.append("  - The issue list provided was empty")
+        status_parts.append("  - All issues were filtered out during processing")
+
+    status_message = "\n".join(status_parts)
+    print(f"\n[github_issue_manager] Final status: {status_message}")
+
+    return {"github_issue_manager_history": [status_message]}
