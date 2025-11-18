@@ -43,7 +43,8 @@ else:
 
 class AgentState(TypedDict):
     """Defines the state of the agentic workflow."""
-    cloud_run_service: str
+    cloud_run_service: str  # Service name/ID
+    service_type: str  # Service type (cloud_run, cloud_build, etc.)
     git_repo_url: str
     messages: Annotated[list[AnyMessage], operator.add]
     issues: list[Issue]
@@ -63,27 +64,41 @@ def supervisor_node(state: AgentState):
     user_query = state['messages'][-1].content
     conversation_history = state['messages']
 
-    # Get service name from state (passed from API request)
+    # Get service name and type from state (passed from API request)
     service_name = state.get("cloud_run_service")
+    service_type = state.get("service_type", "cloud_run")  # Default to cloud_run
 
     # If not provided in state, attempt to extract from the user query as fallback
     if not service_name:
-        # Try to match with optional quotes around the service name
-        match_service = re.search(r"cloud run service\s+['\"]?([\w-]+)['\"]?", user_query, re.IGNORECASE)
-        if match_service:
-            service_name = match_service.group(1)
-            logger.info(f"Extracted service name from query: {service_name}")
-        else:
-            error_msg = "No Cloud Run service name specified. Please provide a service name in your query (e.g., 'for cloud run service my-service') or in the API request."
+        # Try to match service type and name patterns
+        service_patterns = [
+            (r"cloud run service\s+['\"]?([\w-]+)['\"]?", "cloud_run"),
+            (r"cloud build\s+(?:logs for\s+)?['\"]?([\w-]+)['\"]?", "cloud_build"),
+            (r"cloud function\s+['\"]?([\w-]+)['\"]?", "cloud_functions"),
+            (r"gce instance\s+['\"]?([\w-]+)['\"]?", "gce"),
+            (r"gke cluster\s+['\"]?([\w-]+)['\"]?", "gke"),
+            (r"app engine\s+['\"]?([\w-]+)['\"]?", "app_engine"),
+        ]
+
+        for pattern, svc_type in service_patterns:
+            match = re.search(pattern, user_query, re.IGNORECASE)
+            if match:
+                service_name = match.group(1)
+                service_type = svc_type
+                logger.info(f"Extracted service name '{service_name}' and type '{service_type}' from query")
+                break
+
+        if not service_name:
+            error_msg = "No service name specified. Please provide a service name in your query (e.g., 'cloud run service my-service', 'cloud build my-build') or in the API request."
             logger.error(error_msg)
-            # Return an error message to the user
             return {
                 "messages": [HumanMessage(content=error_msg)],
                 "next_agent": "END",
-                "cloud_run_service": None
+                "cloud_run_service": None,
+                "service_type": "cloud_run"
             }
     else:
-        logger.info(f"Using service name from request: {service_name}")
+        logger.info(f"Using service name '{service_name}' and type '{service_type}' from request")
 
     response = supervisor_agent(user_query=user_query, conversation_history=conversation_history)
 
@@ -100,6 +115,7 @@ def supervisor_node(state: AgentState):
     updates = {
         "orchestrator_history": response['history'],
         "cloud_run_service": service_name,
+        "service_type": service_type,
         "git_repo_url": repo_url,
         "next_agent": next_agent,
         "issue_content": issue_content
@@ -110,13 +126,16 @@ def log_explorer_node(state: AgentState):
     """Answers questions about logs and explores potential issues."""
     logger.info("--- Log Explorer Node ---")
     service_name = state.get('cloud_run_service')
+    service_type = state.get('service_type', 'cloud_run')
     user_query = state['messages'][-1].content
 
     logger.info(f"Service Name: {service_name}")
+    logger.info(f"Service Type: {service_type}")
     logger.info(f"User Query: {user_query}")
 
     result = log_explorer_agent(
         service_name=service_name,
+        service_type=service_type,
         user_query=user_query,
         conversation_history=state['messages']
     )
@@ -272,6 +291,7 @@ async def startup_event():
 class Query(BaseModel):
     user_query: str
     service_name: str = None  # Optional, can be extracted from query if not provided
+    service_type: str = "cloud_run"  # Optional, defaults to cloud_run for backward compatibility
     repo_url: str = None  # Optional, GitHub repository URL for issue creation
 
 @app.get("/")
@@ -285,6 +305,7 @@ async def run_workflow(query: Query):
     initial_state = {
         "messages": [HumanMessage(content=query.user_query)],
         "cloud_run_service": query.service_name,
+        "service_type": query.service_type,
         "git_repo_url": query.repo_url
     }
 

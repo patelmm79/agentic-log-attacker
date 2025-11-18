@@ -1,16 +1,17 @@
 
 # Agentic Log Attacker
 
-An AI-powered log monitoring and issue management system that uses LangGraph to orchestrate multiple specialized agents. The system monitors Google Cloud Run service logs, analyzes them using the Gemini API, identifies issues, and can automatically create GitHub issues with suggested fixes.
+An AI-powered log monitoring and issue management system that uses LangGraph to orchestrate multiple specialized agents. The system monitors logs from multiple Google Cloud Platform services (Cloud Run, Cloud Build, Cloud Functions, GCE, GKE, App Engine), analyzes them using the Gemini API, identifies issues, and can automatically create GitHub issues with suggested fixes.
 
 ## Features
 
-- **🔍 Intelligent Log Monitoring:** Advanced log retrieval from Google Cloud Run with multiple filter strategies and severity-based filtering
+- **🔍 Intelligent Log Monitoring:** Advanced log retrieval from multiple GCP services (Cloud Run, Cloud Build, Cloud Functions, GCE, GKE, App Engine) with multiple filter strategies and severity-based filtering
 - **🤖 Multi-Agent Architecture:** Uses LangGraph to coordinate specialized AI agents for different tasks
 - **📊 Issue Detection:** Analyzes logs using Gemini API to identify potential issues and patterns
 - **🐙 GitHub Integration:** Automatically creates GitHub issues with duplicate detection
 - **🔧 Automated Code Fixes:** Generates code fixes using AI and creates pull requests
 - **💬 Conversational Interface:** Natural language queries to explore logs and issues
+- **☁️ Multi-Service Support:** Monitor logs from Cloud Run, Cloud Build, Cloud Functions, GCE, GKE, and App Engine
 
 ## Architecture
 
@@ -80,7 +81,22 @@ sequenceDiagram
     API-->>User: JSON result
 ```
 
-### Cloud Run Log Retrieval Strategy
+### Multi-Service Log Support
+
+The system supports monitoring logs from multiple Google Cloud Platform services:
+
+| Service Type | Resource Type | Example Service Names |
+|-------------|---------------|----------------------|
+| **Cloud Run** | `cloud_run_revision` | Service names (e.g., `my-api-service`) |
+| **Cloud Build** | `build` | Build IDs or trigger IDs (e.g., `abc-123`) |
+| **Cloud Functions** | `cloud_function` | Function names (e.g., `my-auth-handler`) |
+| **GCE** | `gce_instance` | Instance IDs or names (e.g., `my-vm-1`) |
+| **GKE** | `k8s_container` | Cluster, namespace, or pod names |
+| **App Engine** | `gae_app` | Module or version IDs |
+
+Each service type has multiple filter variations to ensure successful log retrieval. The system automatically tries different label fields (e.g., `service_name`, `configuration_name`, `build_id`) to maximize compatibility with different GCP configurations.
+
+### Log Retrieval Strategy
 
 The system uses an intelligent multi-filter approach to retrieve logs:
 
@@ -327,21 +343,45 @@ Execute the multi-agent workflow with a user query.
 **Request Body:**
 ```json
 {
-  "user_query": "review logs for cloud run service my-service"
+  "user_query": "review logs for cloud run service my-service",
+  "service_name": "my-service",
+  "service_type": "cloud_run",
+  "repo_url": "https://github.com/owner/repo"
 }
 ```
 
+**Supported Service Types:**
+- `cloud_run` - Cloud Run services (default)
+- `cloud_build` - Cloud Build builds
+- `cloud_functions` - Cloud Functions
+- `gce` - Google Compute Engine instances
+- `gke` - Google Kubernetes Engine clusters
+- `app_engine` - App Engine services
+
 **Example Queries:**
 - `"review logs for cloud run service vllm-gemma-3-1b-it"`
-- `"what errors occurred in the last hour?"`
-- `"summarize recent logs"`
+- `"analyze cloud build logs for build-abc-123"`
+- `"check cloud function my-auth-handler for errors"`
+- `"what errors occurred in gce instance my-vm?"`
+- `"summarize recent logs for gke cluster production-cluster"`
 - `"create an issue for the authentication failures"`
+
+**Example with Service Type:**
+```json
+{
+  "user_query": "What errors occurred in my recent builds?",
+  "service_name": "my-build-trigger",
+  "service_type": "cloud_build",
+  "repo_url": "https://github.com/myorg/myrepo"
+}
+```
 
 **Response:**
 ```json
 {
   "result": {
     "cloud_run_service": "my-service",
+    "service_type": "cloud_run",
     "messages": [...],
     "issues": [...],
     "orchestrator_history": [...]

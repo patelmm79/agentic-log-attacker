@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an AI-powered log monitoring and issue management system that uses LangGraph for orchestrating multiple agents. The system monitors Google Cloud Run service logs, analyzes them using the Gemini API, identifies issues, and can automatically create GitHub issues with suggested fixes.
+This is an AI-powered log monitoring and issue management system that uses LangGraph for orchestrating multiple agents. The system monitors logs from multiple GCP services (Cloud Run, Cloud Build, Cloud Functions, GCE, GKE, App Engine), analyzes them using the Gemini API, identifies issues, and can automatically create GitHub issues with suggested fixes.
 
 ## Development Commands
 
@@ -57,7 +57,8 @@ The application uses LangGraph's StateGraph to orchestrate multiple specialized 
 ### State Management
 
 The workflow state (`AgentState` in `src/main.py`) tracks:
-- `cloud_run_service`: Target Cloud Run service name
+- `cloud_run_service`: Target service name (despite the name, this works for all service types)
+- `service_type`: Type of GCP service (cloud_run, cloud_build, cloud_functions, gce, gke, app_engine)
 - `git_repo_url`: GitHub repository URL for issue creation
 - `messages`: Conversation history (Annotated with operator.add)
 - `issues`: List of identified issues (using Pydantic `Issue` model)
@@ -87,9 +88,11 @@ Agents communicate through the shared state. Each agent:
 
 **GCP Logging Tool** (`src/tools/gcp_logging_tool.py`):
 - Queries Google Cloud Logging API
-- Filters by Cloud Run service name
-- Supports time-range filtering (max 24 hours)
+- Supports multiple GCP service types via `service_type` parameter
+- Uses service-specific filter variations from `src/models/service_types.py`
+- Supports time-range filtering (max 48 hours with automatic retry)
 - Returns logs in descending order (most recent first)
+- Automatically tries multiple filter variations per service type
 
 **GitHub Integration** (`src/tools/github_tool.py`, `src/agents/github_issue_manager.py`):
 - Checks for duplicate issues before creation
@@ -115,8 +118,27 @@ FastAPI endpoints in `src/main.py`:
 
 ## Important Implementation Details
 
-### Service Name Extraction
-The supervisor node attempts to extract Cloud Run service names from user queries using regex: `r"cloud run service\s+([\w-]+)"`. Falls back to environment variable if not found.
+### Multi-Service Support
+The system supports multiple GCP service types defined in `src/models/service_types.py`:
+- **ServiceType Enum**: Defines supported service types (cloud_run, cloud_build, cloud_functions, gce, gke, app_engine)
+- **SERVICE_CONFIG**: Maps each service type to its GCP resource type and filter variations
+- Each service type has multiple filter variations to maximize log retrieval success
+
+Example service configurations:
+- Cloud Run: Uses `service_name` and `configuration_name` labels
+- Cloud Build: Uses `build_id`, `build_trigger_id`, and logName patterns
+- Cloud Functions: Uses `function_name` and `region` labels
+
+### Service Name and Type Extraction
+The supervisor node (`src/main.py:supervisor_node`) extracts both service name and type from user queries using multiple regex patterns:
+- Cloud Run: `r"cloud run service\s+['\"]?([\w-]+)['\"]?"`
+- Cloud Build: `r"cloud build\s+(?:logs for\s+)?['\"]?([\w-]+)['\"]?"`
+- Cloud Functions: `r"cloud function\s+['\"]?([\w-]+)['\"]?"`
+- GCE: `r"gce instance\s+['\"]?([\w-]+)['\"]?"`
+- GKE: `r"gke cluster\s+['\"]?([\w-]+)['\"]?"`
+- App Engine: `r"app engine\s+['\"]?([\w-]+)['\"]?"`
+
+Falls back to environment variable if not found. Defaults to "cloud_run" service type.
 
 ### JSON Response Parsing
 Several agents expect JSON responses from Gemini. The code handles markdown-wrapped JSON (e.g., ` ```json ... ``` `) by stripping the markers before parsing.
