@@ -34,8 +34,7 @@ SERVICE_CONFIG: Dict[ServiceType, Dict[str, any]] = {
     ServiceType.CLOUD_FUNCTIONS: {
         "resource_type": "cloud_function",
         "filter_variations": [
-            'resource.labels.function_name = "{service_name}"',
-            'resource.labels.region = "{service_name}"'
+            'resource.labels.function_name = "{service_name}"'
         ]
     },
     ServiceType.GCE: {
