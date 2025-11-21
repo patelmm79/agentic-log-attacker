@@ -2,14 +2,16 @@ import os
 import logging
 from google.cloud.logging import Client, DESCENDING
 from datetime import datetime, timedelta
+from src.models.service_types import ServiceType, SERVICE_CONFIG
 
 logger = logging.getLogger(__name__)
 
-def get_gcp_logs(service_name: str, limit: int = 500, page_token: str = None, start_time: str = None, end_time: str = None) -> tuple[str, str, Exception]:
+def get_gcp_logs(service_name: str, service_type: str = "cloud_run", limit: int = 500, page_token: str = None, start_time: str = None, end_time: str = None) -> tuple[str, str, Exception]:
     """Fetches logs from a Google Cloud project for a specific service.
 
     Args:
-        service_name: The name of the Cloud Run service.
+        service_name: The name/ID of the service (e.g., service name, build ID, function name).
+        service_type: The type of GCP service (cloud_run, cloud_build, cloud_functions, gce, gke, app_engine).
         limit: The maximum number of log entries to fetch.
         page_token: The token for the next page of logs.
         start_time: The start of the time range in ISO 8601 format (e.g., '2024-01-01T12:00:00Z').
@@ -20,7 +22,16 @@ def get_gcp_logs(service_name: str, limit: int = 500, page_token: str = None, st
     """
 
     project_id = os.environ["GOOGLE_CLOUD_PROJECT"]
-    logger.info(f"Fetching logs for service: {service_name}, Project ID: {project_id}")
+
+    # Convert string to ServiceType enum
+    try:
+        service_type_enum = ServiceType(service_type)
+    except ValueError:
+        error_msg = f"Unsupported service type: {service_type}. Supported types: {', '.join([t.value for t in ServiceType])}"
+        logger.error(error_msg)
+        return "", None, ValueError(error_msg)
+
+    logger.info(f"Fetching logs for service: {service_name}, Type: {service_type_enum.value}, Project ID: {project_id}")
     client = Client(project=project_id)
 
     # Build time filter component if provided, otherwise use default 24-hour lookback
@@ -44,14 +55,25 @@ def get_gcp_logs(service_name: str, limit: int = 500, page_token: str = None, st
         time_filter = f' AND timestamp >= "{start.isoformat()}Z" AND timestamp <= "{end.isoformat()}Z"'
         logger.info(f"Using default 24-hour lookback: {start.isoformat()}Z to {end.isoformat()}Z")
 
-    # Try multiple filter variations for Cloud Run logs
-    # Include severity >= DEFAULT to capture all log levels including DEFAULT
-    filter_variations = [
-        # Original filter with service_name
-        f'resource.type = "cloud_run_revision" AND resource.labels.service_name = "{service_name}" AND severity >= DEFAULT{time_filter}',
-        # Try with configuration_name (common alternative)
-        f'resource.type = "cloud_run_revision" AND resource.labels.configuration_name = "{service_name}" AND severity >= DEFAULT{time_filter}',
-    ]
+    # Get service-specific configuration
+    config = SERVICE_CONFIG.get(service_type_enum)
+    if not config:
+        error_msg = f"No configuration found for service type: {service_type_enum}"
+        logger.error(error_msg)
+        return "", None, ValueError(error_msg)
+
+    # Build filter variations based on service type
+    filter_variations = []
+    for filter_template in config["filter_variations"]:
+        # Replace placeholders
+        filter_str = filter_template.format(
+            service_name=service_name,
+            project_id=project_id
+        )
+        full_filter = f'resource.type = "{config["resource_type"]}" AND {filter_str} AND severity >= DEFAULT{time_filter}'
+        filter_variations.append(full_filter)
+
+    logger.info(f"Generated {len(filter_variations)} filter variations for {service_type_enum.value}")
 
     try:
         for i, log_filter in enumerate(filter_variations):
@@ -77,10 +99,15 @@ def get_gcp_logs(service_name: str, limit: int = 500, page_token: str = None, st
             start = end - timedelta(hours=48)
             time_filter_48h = f' AND timestamp >= "{start.isoformat()}Z" AND timestamp <= "{end.isoformat()}Z"'
 
-            filter_variations_48h = [
-                f'resource.type = "cloud_run_revision" AND resource.labels.service_name = "{service_name}" AND severity >= DEFAULT{time_filter_48h}',
-                f'resource.type = "cloud_run_revision" AND resource.labels.configuration_name = "{service_name}" AND severity >= DEFAULT{time_filter_48h}',
-            ]
+            # Rebuild filter variations with 48h time window
+            filter_variations_48h = []
+            for filter_template in config["filter_variations"]:
+                filter_str = filter_template.format(
+                    service_name=service_name,
+                    project_id=project_id
+                )
+                full_filter = f'resource.type = "{config["resource_type"]}" AND {filter_str} AND severity >= DEFAULT{time_filter_48h}'
+                filter_variations_48h.append(full_filter)
 
             for i, log_filter in enumerate(filter_variations_48h):
                 logger.info(f"[48h Filter {i+1}/{len(filter_variations_48h)}] Trying: {log_filter}")
