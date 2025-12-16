@@ -3,6 +3,8 @@ import sys
 import re
 import logging
 import uuid
+import time
+from datetime import datetime
 from dotenv import load_dotenv
 from typing import TypedDict, Annotated
 import operator
@@ -10,7 +12,7 @@ from langgraph.graph import StateGraph, END
 import google.generativeai as genai
 from langgraph.checkpoint.memory import InMemorySaver
 from langchain_core.messages import AnyMessage, HumanMessage
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends, HTTPException
 from pydantic import BaseModel
 
 from src.agents.log_explorer import log_explorer_agent
@@ -19,6 +21,9 @@ from src.agents.github_issue_manager import github_issue_manager_agent
 from src.agents.supervisor import supervisor_agent
 from src.agents.code_fixer import code_fixer_agent
 from src.agents.solutions_agent import solutions_agent
+from src.models.a2a_models import A2ARequest, A2AResponse
+from src.middleware.a2a_auth import authenticator
+from src.middleware.rate_limiter import rate_limiter
 
 # Load environment variables
 load_dotenv()
@@ -43,7 +48,7 @@ else:
 
 class AgentState(TypedDict):
     """Defines the state of the agentic workflow."""
-    cloud_run_service: str  # Service name/ID
+    service_name: str  # Service name/ID (works for all service types)
     service_type: str  # Service type (cloud_run, cloud_build, etc.)
     git_repo_url: str
     messages: Annotated[list[AnyMessage], operator.add]
@@ -65,19 +70,23 @@ def supervisor_node(state: AgentState):
     conversation_history = state['messages']
 
     # Get service name and type from state (passed from API request)
-    service_name = state.get("cloud_run_service")
+    service_name = state.get("service_name")
     service_type = state.get("service_type", "cloud_run")  # Default to cloud_run
 
     # If not provided in state, attempt to extract from the user query as fallback
     if not service_name:
         # Try to match service type and name patterns
+        # Pattern explanation: [a-zA-Z0-9._-]+ matches alphanumeric, dots, underscores, and hyphens
+        # (?:['\"]|\s|,|$) ensures the name ends with a quote, whitespace, comma, or end of string
+        # This prevents partial matches like "my" from "my@invalid"
+        # This aligns with GCP naming conventions and our sanitization function
         service_patterns = [
-            (r"cloud run service\s+['\"]?([\w-]+)['\"]?", "cloud_run"),
-            (r"cloud build\s+(?:logs for\s+)?['\"]?([\w-]+)['\"]?", "cloud_build"),
-            (r"cloud function\s+['\"]?([\w-]+)['\"]?", "cloud_functions"),
-            (r"gce instance\s+['\"]?([\w-]+)['\"]?", "gce"),
-            (r"gke cluster\s+['\"]?([\w-]+)['\"]?", "gke"),
-            (r"app engine\s+['\"]?([\w-]+)['\"]?", "app_engine"),
+            (r"cloud run service\s+['\"]?([a-zA-Z0-9._-]+)(?:['\"]|\s|,|$)", "cloud_run"),
+            (r"cloud build\s+(?:logs for\s+)?['\"]?([a-zA-Z0-9._-]+)(?:['\"]|\s|,|$)", "cloud_build"),
+            (r"cloud function\s+['\"]?([a-zA-Z0-9._-]+)(?:['\"]|\s|,|$)", "cloud_functions"),
+            (r"gce instance\s+['\"]?([a-zA-Z0-9._-]+)(?:['\"]|\s|,|$)", "gce"),
+            (r"gke cluster\s+['\"]?([a-zA-Z0-9._-]+)(?:['\"]|\s|,|$)", "gke"),
+            (r"app engine\s+['\"]?([a-zA-Z0-9._-]+)(?:['\"]|\s|,|$)", "app_engine"),
         ]
 
         for pattern, svc_type in service_patterns:
@@ -85,6 +94,16 @@ def supervisor_node(state: AgentState):
             if match:
                 service_name = match.group(1)
                 service_type = svc_type
+
+                # Validate extracted service name matches expected format
+                # This provides defense-in-depth before the sanitization step
+                if not re.match(r'^[a-zA-Z0-9._-]+$', service_name):
+                    logger.warning(
+                        f"Extracted potentially invalid service name: '{service_name}'. "
+                        f"Service names should only contain alphanumeric characters, dots, underscores, and hyphens."
+                    )
+                    continue  # Try next pattern
+
                 logger.info(f"Extracted service name '{service_name}' and type '{service_type}' from query")
                 break
 
@@ -94,7 +113,7 @@ def supervisor_node(state: AgentState):
             return {
                 "messages": [HumanMessage(content=error_msg)],
                 "next_agent": "END",
-                "cloud_run_service": None,
+                "service_name": None,
                 "service_type": "cloud_run"
             }
     else:
@@ -114,7 +133,7 @@ def supervisor_node(state: AgentState):
     # Return updates to the state
     updates = {
         "orchestrator_history": response['history'],
-        "cloud_run_service": service_name,
+        "service_name": service_name,
         "service_type": service_type,
         "git_repo_url": repo_url,
         "next_agent": next_agent,
@@ -125,7 +144,7 @@ def supervisor_node(state: AgentState):
 def log_explorer_node(state: AgentState):
     """Answers questions about logs and explores potential issues."""
     logger.info("--- Log Explorer Node ---")
-    service_name = state.get('cloud_run_service')
+    service_name = state.get('service_name')
     service_type = state.get('service_type', 'cloud_run')
     user_query = state['messages'][-1].content
 
@@ -145,7 +164,7 @@ def log_explorer_node(state: AgentState):
 def issue_creation_node(state: AgentState):
     """Analyzes log files and generates issues in every case."""
     logger.info("--- Issue Creation Node ---")
-    service_name = state.get('cloud_run_service')
+    service_name = state.get('service_name')
     repo_url = state.get('git_repo_url')
 
     logger.info(f"Service name: {service_name}")
@@ -212,7 +231,7 @@ def solutions_node(state: AgentState):
     """Provides a solution for the identified issues."""
     logger.info("--- Entering Solutions Node ---")
     logger.info(f"Issues in state: {state.get('issues')}")
-    service_name = state.get('cloud_run_service')
+    service_name = state.get('service_name')
     # Pass the first issue if available, otherwise an empty dict
     issue_to_process = state['issues'][0] if state.get('issues') else {}
     solution = solutions_agent(issue=issue_to_process, user_query=state['messages'][-1].content, service_name=service_name)
@@ -283,39 +302,219 @@ app = FastAPI()
 @app.on_event("startup")
 async def startup_event():
     logger.info("=" * 50)
-    logger.info("FastAPI application starting up...")
+    logger.info("FastAPI application starting up (A2A Integration v2.0)...")
     logger.info(f"PORT environment variable: {os.environ.get('PORT', '8080')}")
-    logger.info("Application is ready to receive requests")
+    logger.info("A2A A2A Skill: analyze_and_monitor_logs")
+    logger.info("Application is ready to receive A2A requests from dev-nexus")
     logger.info("=" * 50)
 
-class Query(BaseModel):
-    user_query: str
-    service_name: str = None  # Optional, can be extracted from query if not provided
-    service_type: str = "cloud_run"  # Optional, defaults to cloud_run for backward compatibility
-    repo_url: str = None  # Optional, GitHub repository URL for issue creation
 
+@app.get("/health")
 @app.get("/")
-async def read_root():
-    logger.info("Health check endpoint called")
-    return {"message": "Agentic Log Attacker API is running!"}
+async def health_check():
+    """Health check endpoint for A2A compatibility."""
+    gemini_configured = bool(os.getenv("GEMINI_API_KEY"))
+    gcp_project = os.getenv("GOOGLE_CLOUD_PROJECT")
+    github_token = bool(os.getenv("GITHUB_TOKEN"))
 
-@app.post("/run_workflow")
-async def run_workflow(query: Query):
-    # Initial state for the workflow
-    initial_state = {
-        "messages": [HumanMessage(content=query.user_query)],
-        "cloud_run_service": query.service_name,
-        "service_type": query.service_type,
-        "git_repo_url": query.repo_url
+    status = "healthy" if (gemini_configured and gcp_project and github_token) else "degraded"
+
+    return {
+        "status": status,
+        "service": "agentic-log-attacker",
+        "version": "2.0.0-a2a",
+        "gemini_configured": gemini_configured,
+        "gcp_project": gcp_project,
+        "github_configured": github_token,
+        "available_skills": ["analyze_and_monitor_logs"],
+        "timestamp": datetime.utcnow().isoformat()
     }
 
-    # Generate a unique thread_id for this workflow execution
-    thread_id = str(uuid.uuid4())
 
-    # Run the workflow with the required config for the checkpointer
-    result = full_workflow.invoke(
-        initial_state,
-        config={"configurable": {"thread_id": thread_id}}
-    )
+@app.get("/.well-known/agent.json")
+async def agent_metadata():
+    """Return A2A AgentCard for service discovery by dev-nexus."""
+    return {
+        "name": "agentic-log-attacker",
+        "version": "2.0.0",
+        "description": "AI-powered GCP log monitoring and issue management system with multi-agent workflow",
+        "capabilities": [
+            "log_analysis",
+            "multi_service_support",
+            "issue_detection",
+            "github_integration",
+            "automated_remediation"
+        ],
+        "supported_services": [
+            "cloud_run",
+            "cloud_build",
+            "cloud_functions",
+            "gce",
+            "gke",
+            "app_engine"
+        ],
+        "endpoints": {
+            "execute": "/a2a/execute",
+            "health": "/health"
+        },
+        "skills": [
+            {
+                "id": "analyze_and_monitor_logs",
+                "name": "Analyze and Monitor GCP Logs",
+                "description": "Full multi-agent workflow: queries GCP logs, analyzes with AI, detects issues, creates GitHub issues",
+                "authentication": "service_account",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "user_query": {
+                            "type": "string",
+                            "description": "Natural language query about logs",
+                            "required": True
+                        },
+                        "service_name": {
+                            "type": "string",
+                            "description": "GCP service name (optional, extracted from query if not provided)"
+                        },
+                        "service_type": {
+                            "type": "string",
+                            "enum": ["cloud_run", "cloud_build", "cloud_functions", "gce", "gke", "app_engine"],
+                            "default": "cloud_run"
+                        },
+                        "repo_url": {
+                            "type": "string",
+                            "description": "GitHub repository URL for issue creation (optional)"
+                        }
+                    }
+                },
+                "output_schema": {
+                    "type": "object",
+                    "properties": {
+                        "service_name": {"type": "string"},
+                        "service_type": {"type": "string"},
+                        "analysis": {"type": "string"},
+                        "issues_identified": {"type": "integer"},
+                        "issues_created": {"type": "integer"},
+                        "github_issue_urls": {"type": "array", "items": {"type": "string"}}
+                    }
+                }
+            }
+        ],
+        "authentication": {
+            "type": "service_account",
+            "method": "bearer_token",
+            "token_type": "google_identity_token",
+            "allowed_service_accounts": [
+                "ai-ap-service@globalbiting-dev.iam.gserviceaccount.com"
+            ]
+        },
+        "rate_limiting": {
+            "requests_per_minute": 100,
+            "window_seconds": 60
+        },
+        "deployment": {
+            "platform": "cloud_run",
+            "region": "us-central1",
+            "project": os.getenv("GOOGLE_CLOUD_PROJECT")
+        },
+        "integration": {
+            "dev_nexus_url": "https://pattern-discovery-agent-665374072631.us-central1.run.app/"
+        }
+    }
 
-    return {"result": result}
+
+@app.post("/a2a/execute")
+async def a2a_execute(
+    request: A2ARequest,
+    caller: str = Depends(authenticator.verify_token)
+):
+    """
+    Execute A2A skills via dev-nexus integration.
+
+    Currently supports:
+    - analyze_and_monitor_logs: Full workflow for log analysis and issue creation
+    """
+    start_time = time.time()
+
+    # Rate limiting
+    await rate_limiter.check_rate_limit(caller)
+
+    # Validate skill ID
+    if request.skill_id != "analyze_and_monitor_logs":
+        raise HTTPException(
+            status_code=404,
+            detail=f"Skill '{request.skill_id}' not found. Available skills: analyze_and_monitor_logs"
+        )
+
+    try:
+        # Extract input parameters
+        user_query = request.input.get("user_query")
+        service_name = request.input.get("service_name")
+        service_type = request.input.get("service_type", "cloud_run")
+        repo_url = request.input.get("repo_url")
+
+        if not user_query:
+            raise HTTPException(status_code=400, detail="user_query is required")
+
+        logger.info(f"[A2A] Executing workflow: caller={caller}, query_length={len(user_query)}")
+
+        # Execute the LangGraph workflow (same as old /run_workflow)
+        initial_state = {
+            "messages": [HumanMessage(content=user_query)],
+            "service_name": service_name,
+            "service_type": service_type,
+            "git_repo_url": repo_url
+        }
+
+        thread_id = str(uuid.uuid4())
+
+        result = full_workflow.invoke(
+            initial_state,
+            config={"configurable": {"thread_id": thread_id}}
+        )
+
+        # Format response for A2A
+        execution_time = int((time.time() - start_time) * 1000)
+
+        # Extract GitHub issue URLs from result
+        github_issues = []
+        if result.get('github_issue_manager_history'):
+            for history_item in result['github_issue_manager_history']:
+                if isinstance(history_item, str) and 'https://github.com' in history_item:
+                    # Extract URLs from history text
+                    urls = re.findall(r'https://github\.com/[^\s]+', history_item)
+                    github_issues.extend(urls)
+
+        analysis_text = None
+        if result.get('log_reviewer_history'):
+            analysis_text = result.get('log_reviewer_history')[-1]
+
+        logger.info(
+            f"[A2A] Workflow completed: issues_identified={len(result.get('issues', []))}, "
+            f"issues_created={len(github_issues)}, execution_time={execution_time}ms"
+        )
+
+        return A2AResponse(
+            success=True,
+            result={
+                "service_name": result.get('service_name'),
+                "service_type": result.get('service_type'),
+                "analysis": analysis_text,
+                "issues_identified": len(result.get('issues', [])),
+                "issues_created": len(github_issues),
+                "github_issue_urls": github_issues,
+                "orchestrator_history": result.get('orchestrator_history', [])
+            },
+            execution_time_ms=execution_time
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[A2A] Workflow execution failed: {e}", exc_info=True)
+        execution_time = int((time.time() - start_time) * 1000)
+
+        return A2AResponse(
+            success=False,
+            error=str(e),
+            execution_time_ms=execution_time
+        )

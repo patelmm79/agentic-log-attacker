@@ -6,6 +6,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is an AI-powered log monitoring and issue management system that uses LangGraph for orchestrating multiple agents. The system monitors logs from multiple GCP services (Cloud Run, Cloud Build, Cloud Functions, GCE, GKE, App Engine), analyzes them using the Gemini API, identifies issues, and can automatically create GitHub issues with suggested fixes.
 
+### A2A Integration (v2.0)
+
+The service is now A2A (Agent-to-Agent) protocol compatible and integrates with dev-nexus and other A2A agents. Key changes:
+
+- **New Endpoint**: `/a2a/execute` (replaces old `/run_workflow`)
+- **Authentication**: Required (Google Cloud service account tokens)
+- **Single Skill**: `analyze_and_monitor_logs` (wraps the full LangGraph workflow)
+- **Rate Limiting**: 100 requests/minute per service account
+- **Region**: us-central1 (to match dev-nexus deployment)
+
+New files for A2A support:
+- `src/models/a2a_models.py` - Request/response models
+- `src/middleware/a2a_auth.py` - Authentication middleware
+- `src/middleware/rate_limiter.py` - Rate limiting middleware
+- `scripts/setup_a2a_secrets.sh` - Secret Manager setup
+- `scripts/test_a2a_endpoint.py` - Integration test script
+
 ## Development Commands
 
 ### Running the Application
@@ -57,7 +74,7 @@ The application uses LangGraph's StateGraph to orchestrate multiple specialized 
 ### State Management
 
 The workflow state (`AgentState` in `src/main.py`) tracks:
-- `cloud_run_service`: Target service name (despite the name, this works for all service types)
+- `service_name`: Target service name (works for all service types)
 - `service_type`: Type of GCP service (cloud_run, cloud_build, cloud_functions, gce, gke, app_engine)
 - `git_repo_url`: GitHub repository URL for issue creation
 - `messages`: Conversation history (Annotated with operator.add)
@@ -113,8 +130,45 @@ Required environment variables (see `.env.example`):
 ## API Interface
 
 FastAPI endpoints in `src/main.py`:
-- `GET /`: Health check endpoint
-- `POST /run_workflow`: Execute the agent workflow with a JSON body containing `user_query`
+- `GET /health` / `GET /`: Health check endpoint (returns status of service dependencies)
+- `GET /.well-known/agent.json`: A2A AgentCard for service discovery by dev-nexus
+- `POST /a2a/execute`: Execute A2A skills (requires authentication via service account token)
+
+### A2A Endpoint Details
+
+**POST /a2a/execute** (Requires Authentication)
+
+Request:
+```json
+{
+  "skill_id": "analyze_and_monitor_logs",
+  "input": {
+    "user_query": "string (required)",
+    "service_name": "string (optional)",
+    "service_type": "string (optional, defaults to cloud_run)",
+    "repo_url": "string (optional)"
+  }
+}
+```
+
+Response:
+```json
+{
+  "success": true,
+  "result": {
+    "service_name": "string",
+    "service_type": "string",
+    "analysis": "string",
+    "issues_identified": 3,
+    "issues_created": 2,
+    "github_issue_urls": ["array of urls"],
+    "orchestrator_history": ["array"]
+  },
+  "execution_time_ms": 5432
+}
+```
+
+Authentication: Bearer token (Google Cloud identity token)
 
 ## Important Implementation Details
 

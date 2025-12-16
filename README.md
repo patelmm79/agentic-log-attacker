@@ -3,6 +3,47 @@
 
 An AI-powered log monitoring and issue management system that uses LangGraph to orchestrate multiple specialized agents. The system monitors logs from multiple Google Cloud Platform services (Cloud Run, Cloud Build, Cloud Functions, GCE, GKE, App Engine), analyzes them using the Gemini API, identifies issues, and can automatically create GitHub issues with suggested fixes.
 
+## A2A Integration with Dev-Nexus
+
+This service is now integrated with the **A2A (Agent-to-Agent) protocol** and can be called by [dev-nexus](https://github.com/patelmm79/dev-nexus) and other A2A-compatible agents.
+
+### Quick Start for Dev-Nexus Integration
+
+1. **Service URL**: https://agentic-log-attacker-665374072631.us-central1.run.app
+2. **Service Discovery**: https://agentic-log-attacker-665374072631.us-central1.run.app/.well-known/agent.json
+3. **A2A Skill**: `analyze_and_monitor_logs`
+
+### Calling the Service from Dev-Nexus
+
+```python
+import requests
+from google.auth import default
+from google.auth.transport.requests import Request
+from google.oauth2 import id_token
+
+# Get identity token for the service
+credentials, _ = default()
+target_audience = "https://agentic-log-attacker-665374072631.us-central1.run.app"
+token = id_token.fetch_id_token(Request(), target_audience)
+
+# Call the A2A endpoint
+response = requests.post(
+    f"{target_audience}/a2a/execute",
+    headers={"Authorization": f"Bearer {token}"},
+    json={
+        "skill_id": "analyze_and_monitor_logs",
+        "input": {
+            "user_query": "analyze logs for cloud run service my-service",
+            "service_name": "my-service",
+            "service_type": "cloud_run",
+            "repo_url": "https://github.com/owner/repo"
+        }
+    }
+)
+
+result = response.json()
+```
+
 ## Features
 
 - **🔍 Intelligent Log Monitoring:** Advanced log retrieval from multiple GCP services (Cloud Run, Cloud Build, Cloud Functions, GCE, GKE, App Engine) with multiple filter strategies and severity-based filtering
@@ -380,7 +421,7 @@ Execute the multi-agent workflow with a user query.
 ```json
 {
   "result": {
-    "cloud_run_service": "my-service",
+    "service_name": "my-service",
     "service_type": "cloud_run",
     "messages": [...],
     "issues": [...],

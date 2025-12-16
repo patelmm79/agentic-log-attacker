@@ -1,7 +1,7 @@
 """Service type definitions and configurations for GCP log monitoring."""
 
 from enum import Enum
-from typing import Dict, List
+from typing import Dict, List, Any
 
 
 class ServiceType(str, Enum):
@@ -15,7 +15,7 @@ class ServiceType(str, Enum):
 
 
 # Mapping to GCP resource types and label fields
-SERVICE_CONFIG: Dict[ServiceType, Dict[str, any]] = {
+SERVICE_CONFIG: Dict[ServiceType, Dict[str, Any]] = {
     ServiceType.CLOUD_RUN: {
         "resource_type": "cloud_run_revision",
         "filter_variations": [

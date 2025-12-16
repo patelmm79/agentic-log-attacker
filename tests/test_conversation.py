@@ -22,7 +22,7 @@ def test_full_conversation_flow():
 
     # Initial state
     state = {
-        "cloud_run_service": os.environ.get("CLOUD_RUN_SERVICE"),
+        "service_name": os.environ.get("CLOUD_RUN_SERVICE"),
         "git_repo_url": os.environ.get("GIT_REPO_URL"),
         "user_query": "",
         "issues": [],
@@ -38,7 +38,7 @@ def test_full_conversation_flow():
     print("\n--- Turn 1: Initial Performance Question ---")
     user_message_1 = HumanMessage(content="for cloud run service vllm-gemma-3-1b-it, can you tell if the performance has improved from yesterday's initial requests to today's?")
     response_state = app.invoke({"messages": [user_message_1]}, {"configurable": {"thread_id": thread_id}})
-    assert response_state["cloud_run_service"] == "vllm-gemma-3-1b-it"
+    assert response_state["service_name"] == "vllm-gemma-3-1b-it"
     assert response_state["next_agent"] == "log_explorer"
     response_text = response_state["log_reviewer_history"][-1].lower() # log_explorer_node returns to log_reviewer_history
     assert "cold start" in response_text
@@ -49,7 +49,7 @@ def test_full_conversation_flow():
     print("\n--- Turn 2: Follow-up on Cold Starts ---")
     user_message_2 = HumanMessage(content="how about subsequent cold starts today after the first request? any improvements over time?")
     response_state = app.invoke({"messages": [user_message_2]}, {"configurable": {"thread_id": thread_id}})
-    assert response_state["cloud_run_service"] == "vllm-gemma-3-1b-it" # Should remember from turn 1
+    assert response_state["service_name"] == "vllm-gemma-3-1b-it" # Should remember from turn 1
     assert response_state["next_agent"] == "log_explorer"
     assert "cold start" in response_state["log_reviewer_history"][-1].lower()
     state.update(response_state)

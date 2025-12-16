@@ -1,8 +1,10 @@
 steps:
 - name: 'gcr.io/cloud-builders/docker'
   args: ['build', '--no-cache', '-t', 'gcr.io/$PROJECT_ID/agentic-log-attacker:$COMMIT_SHA', '.']
+
 - name: 'gcr.io/cloud-builders/docker'
   args: ['push', 'gcr.io/$PROJECT_ID/agentic-log-attacker:$COMMIT_SHA']
+
 - name: 'gcr.io/cloud-builders/gcloud'
   args:
   - 'run'
@@ -14,14 +16,18 @@ steps:
   - 'us-central1'
   - '--platform'
   - 'managed'
-  - '--allow-unauthenticated' # Adjust as needed for authentication
+  - '--no-allow-unauthenticated'
   - '--set-env-vars'
-  - 'GOOGLE_CLOUD_PROJECT=$PROJECT_ID,CLOUD_RUN_REGION=us-central1,GEMINI_MODEL_NAME=gemini-2.5-flash'
+  - 'GOOGLE_CLOUD_PROJECT=$PROJECT_ID,CLOUD_RUN_REGION=us-central1,GEMINI_MODEL_NAME=gemini-2.5-flash,DEV_NEXUS_URL=https://pattern-discovery-agent-665374072631.us-central1.run.app/'
+  - '--set-secrets'
+  - 'GEMINI_API_KEY=GEMINI_API_KEY:latest,GITHUB_TOKEN=GITHUB_TOKEN:latest,ALLOWED_SERVICE_ACCOUNTS=ALLOWED_SERVICE_ACCOUNTS:latest'
   - '--timeout'
   - '300'
   - '--memory'
   - '1Gi'
+
 images:
 - 'gcr.io/$PROJECT_ID/agentic-log-attacker:$COMMIT_SHA'
+
 options:
   logging: CLOUD_LOGGING_ONLY

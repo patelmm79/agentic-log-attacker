@@ -1,12 +1,71 @@
 import os
 import logging
+import re
+from typing import Optional, Tuple
 from google.cloud.logging import Client, DESCENDING
 from datetime import datetime, timedelta
 from src.models.service_types import ServiceType, SERVICE_CONFIG
 
 logger = logging.getLogger(__name__)
 
-def get_gcp_logs(service_name: str, service_type: str = "cloud_run", limit: int = 500, page_token: str = None, start_time: str = None, end_time: str = None) -> tuple[str, str, Exception]:
+
+def build_filter_variations(config: dict, service_name: str, project_id: str, time_filter: str) -> list:
+    """Build filter variations for GCP log queries.
+
+    Args:
+        config: Service configuration from SERVICE_CONFIG containing resource_type and filter_variations.
+        service_name: The sanitized service name to use in filters.
+        project_id: The sanitized project ID to use in filters.
+        time_filter: The timestamp filter string (e.g., ' AND timestamp >= "..." AND timestamp <= "..."').
+
+    Returns:
+        A list of filter strings ready for use with GCP Logging API.
+    """
+    filter_variations = []
+    for filter_template in config["filter_variations"]:
+        # Replace placeholders with actual values
+        filter_str = filter_template.format(
+            service_name=service_name,
+            project_id=project_id
+        )
+        # Combine resource type, service filter, severity, and time filters
+        full_filter = f'resource.type = "{config["resource_type"]}" AND {filter_str} AND severity >= DEFAULT{time_filter}'
+        filter_variations.append(full_filter)
+
+    return filter_variations
+
+
+def sanitize_identifier(identifier: str, identifier_type: str = "service_name") -> str:
+    """Sanitize identifiers (service names, project IDs) to prevent filter injection.
+
+    Args:
+        identifier: The identifier to sanitize (e.g., service name, project ID).
+        identifier_type: The type of identifier for error messages.
+
+    Returns:
+        The sanitized identifier.
+
+    Raises:
+        ValueError: If the identifier contains invalid characters.
+    """
+    if not identifier:
+        raise ValueError(f"{identifier_type} cannot be empty")
+
+    # Allow only alphanumeric characters, hyphens, underscores, and dots
+    # This matches GCP naming conventions
+    if not re.match(r'^[a-zA-Z0-9._-]+$', identifier):
+        raise ValueError(
+            f"Invalid {identifier_type}: '{identifier}'. "
+            f"Only alphanumeric characters, hyphens, underscores, and dots are allowed."
+        )
+
+    # Additional length validation (GCP service names are typically max 63 chars)
+    if len(identifier) > 255:
+        raise ValueError(f"{identifier_type} exceeds maximum length of 255 characters")
+
+    return identifier
+
+def get_gcp_logs(service_name: str, service_type: str = "cloud_run", limit: int = 500, page_token: Optional[str] = None, start_time: Optional[str] = None, end_time: Optional[str] = None) -> Tuple[str, Optional[str], Optional[Exception]]:
     """Fetches logs from a Google Cloud project for a specific service.
 
     Args:
@@ -18,10 +77,21 @@ def get_gcp_logs(service_name: str, service_type: str = "cloud_run", limit: int 
         end_time: The end of the time range in ISO 8601 format (e.g., '2024-01-01T13:00:00Z').
 
     Returns:
-        A tuple containing the log entries, the next page token, and an exception if one occurred.
+        A tuple containing:
+        - str: The log entries as a newline-separated string
+        - Optional[str]: The next page token (None if no more pages)
+        - Optional[Exception]: An exception if one occurred (None on success)
     """
 
     project_id = os.environ["GOOGLE_CLOUD_PROJECT"]
+
+    # Sanitize inputs to prevent filter injection attacks
+    try:
+        service_name = sanitize_identifier(service_name, "service_name")
+        project_id = sanitize_identifier(project_id, "project_id")
+    except ValueError as e:
+        logger.error(f"Input validation failed: {e}")
+        return "", None, e
 
     # Convert string to ServiceType enum
     try:
@@ -63,16 +133,7 @@ def get_gcp_logs(service_name: str, service_type: str = "cloud_run", limit: int 
         return "", None, ValueError(error_msg)
 
     # Build filter variations based on service type
-    filter_variations = []
-    for filter_template in config["filter_variations"]:
-        # Replace placeholders
-        filter_str = filter_template.format(
-            service_name=service_name,
-            project_id=project_id
-        )
-        full_filter = f'resource.type = "{config["resource_type"]}" AND {filter_str} AND severity >= DEFAULT{time_filter}'
-        filter_variations.append(full_filter)
-
+    filter_variations = build_filter_variations(config, service_name, project_id, time_filter)
     logger.info(f"Generated {len(filter_variations)} filter variations for {service_type_enum.value}")
 
     try:
@@ -100,14 +161,7 @@ def get_gcp_logs(service_name: str, service_type: str = "cloud_run", limit: int 
             time_filter_48h = f' AND timestamp >= "{start.isoformat()}Z" AND timestamp <= "{end.isoformat()}Z"'
 
             # Rebuild filter variations with 48h time window
-            filter_variations_48h = []
-            for filter_template in config["filter_variations"]:
-                filter_str = filter_template.format(
-                    service_name=service_name,
-                    project_id=project_id
-                )
-                full_filter = f'resource.type = "{config["resource_type"]}" AND {filter_str} AND severity >= DEFAULT{time_filter_48h}'
-                filter_variations_48h.append(full_filter)
+            filter_variations_48h = build_filter_variations(config, service_name, project_id, time_filter_48h)
 
             for i, log_filter in enumerate(filter_variations_48h):
                 logger.info(f"[48h Filter {i+1}/{len(filter_variations_48h)}] Trying: {log_filter}")
