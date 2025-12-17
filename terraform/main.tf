@@ -253,7 +253,11 @@ resource "null_resource" "build" {
     google_project_service.required_apis,
     google_secret_manager_secret_version.gemini_api_key,
     google_secret_manager_secret_version.github_token,
-    google_secret_manager_secret_version.allowed_service_accounts
+    google_secret_manager_secret_version.allowed_service_accounts,
+    google_service_account.cloud_run_sa,
+    google_secret_manager_secret_iam_member.cloud_run_gemini,
+    google_secret_manager_secret_iam_member.cloud_run_github,
+    google_secret_manager_secret_iam_member.cloud_run_allowed_sa
   ]
 }
 
