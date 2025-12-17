@@ -14,9 +14,10 @@ dev_nexus_url                  = "https://pattern-discovery-agent-665374072631.u
 #   export TF_VAR_gemini_api_key="your-gemini-key"
 #   export TF_VAR_github_token="your-github-token"
 #
-# Option 2: Uncomment below and fill in values (NOT RECOMMENDED for production):
-# gemini_api_key = "your-gemini-api-key-here"
-# github_token   = "your-github-personal-access-token-here"
+# Option 2: Provide values below (NOT RECOMMENDED for production).
+# These are placeholder/fake values so the example file is complete.
+gemini_api_key = "fake-gemini-key-XXXXXXXXXXXXXXXX"
+github_token   = "ghp_FAKEgithubtokenXXXXXXXXXXXXXXXXXXXX"
 
 # Container Image (update after first Cloud Build deployment)
 container_image = "gcr.io/globalbiting-dev/agentic-log-attacker:latest"
