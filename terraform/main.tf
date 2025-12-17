@@ -14,6 +14,10 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.0"
     }
+    googlebeta = {
+      source  = "hashicorp/google-beta"
+      version = "~> 5.0"
+    }
   }
 
   # Uncomment to use remote state (recommended for production)
@@ -29,6 +33,10 @@ provider "google" {
 }
 
 provider "random" {}
+provider "google-beta" {
+  project = var.gcp_project_id
+  region  = var.gcp_region
+}
 
 # Enable required APIs
 resource "google_project_service" "required_apis" {
@@ -225,6 +233,7 @@ resource "random_id" "build_tag" {
 }
 
 resource "google_cloudbuild_build" "build" {
+  provider = google-beta
   count   = var.deploy_via_terraform ? 1 : 0
   project = var.gcp_project_id
 
