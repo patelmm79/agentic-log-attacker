@@ -245,10 +245,10 @@ resource "null_resource" "build" {
   }
 
   provisioner "local-exec" {
-    # run from repository root so Dockerfile (in repo root) is available
+    # submit the repository's Cloud Build config and pass COMMIT_SHA substitution
     working_dir = "${path.root}"
 
-    command = "gcloud builds submit --project=${var.gcp_project_id} --tag gcr.io/${var.gcp_project_id}/agentic-log-attacker:${random_id.build_tag[0].hex} . && gcloud run deploy agentic-log-attacker --project=${var.gcp_project_id} --image=gcr.io/${var.gcp_project_id}/agentic-log-attacker:${random_id.build_tag[0].hex} --region=${var.gcp_region} --platform=managed --no-allow-unauthenticated --set-env-vars=GOOGLE_CLOUD_PROJECT=${var.gcp_project_id},CLOUD_RUN_REGION=${var.gcp_region},GEMINI_MODEL_NAME=gemini-2.5-flash,DEV_NEXUS_URL=${var.dev_nexus_url} --set-secrets=GEMINI_API_KEY=${google_secret_manager_secret.gemini_api_key.secret_id}:latest,GITHUB_TOKEN=${google_secret_manager_secret.github_token.secret_id}:latest,ALLOWED_SERVICE_ACCOUNTS=${google_secret_manager_secret.allowed_service_accounts.secret_id}:latest --memory=1Gi --timeout=300s"
+    command = "gcloud builds submit \"${path.root}\" --project=${var.gcp_project_id} --config=\"${path.root}/cloudbuild.yaml\" --substitutions=COMMIT_SHA=${random_id.build_tag[0].hex}"
     interpreter = ["bash", "-c"]
   }
 
