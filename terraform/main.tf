@@ -42,7 +42,9 @@ resource "google_project_service" "required_apis" {
 resource "google_secret_manager_secret" "allowed_service_accounts" {
   secret_id = "ALLOWED_SERVICE_ACCOUNTS"
 
-  replication = { automatic = {} }
+  replication {
+    auto {}
+  }
 
   depends_on = [google_project_service.required_apis]
 }
@@ -57,7 +59,9 @@ resource "google_secret_manager_secret_version" "allowed_service_accounts" {
 resource "google_secret_manager_secret" "gemini_api_key" {
   secret_id = "GEMINI_API_KEY"
 
-  replication = { automatic = {} }
+  replication {
+    auto {}
+  }
 
   depends_on = [google_project_service.required_apis]
 }
@@ -72,7 +76,9 @@ resource "google_secret_manager_secret_version" "gemini_api_key" {
 resource "google_secret_manager_secret" "github_token" {
   secret_id = "GITHUB_TOKEN"
 
-  replication = { automatic = {} }
+  replication {
+    auto {}
+  }
 
   depends_on = [google_project_service.required_apis]
 }
