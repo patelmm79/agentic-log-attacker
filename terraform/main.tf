@@ -147,27 +147,33 @@ resource "google_cloud_run_service" "agentic_log_attacker" {
           value = var.dev_nexus_url
         }
 
-        # Secrets as environment variables
-        env_from {
-          source {
-            secret_ref {
+        # Secrets as environment variables (use value_from.secret_key_ref)
+        env {
+          name = "GEMINI_API_KEY"
+          value_from {
+            secret_key_ref {
               name = google_secret_manager_secret.gemini_api_key.secret_id
+              key  = "latest"
             }
           }
         }
 
-        env_from {
-          source {
-            secret_ref {
+        env {
+          name = "GITHUB_TOKEN"
+          value_from {
+            secret_key_ref {
               name = google_secret_manager_secret.github_token.secret_id
+              key  = "latest"
             }
           }
         }
 
-        env_from {
-          source {
-            secret_ref {
+        env {
+          name = "ALLOWED_SERVICE_ACCOUNTS"
+          value_from {
+            secret_key_ref {
               name = google_secret_manager_secret.allowed_service_accounts.secret_id
+              key  = "latest"
             }
           }
         }
