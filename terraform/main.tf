@@ -217,7 +217,12 @@ resource "null_resource" "cloud_build_submit" {
   count = var.deploy_via_terraform ? 1 : 0
 
   provisioner "local-exec" {
-    command = "gcloud builds submit .. --config=../cloudbuild.yaml --project=${var.gcp_project_id}"
+    # Compute a short commit SHA (fallback to 'local' if git not available) and pass it
+    # to Cloud Build as the COMMIT_SHA substitution so image tag is never empty.
+    command = <<-EOT
+      COMMIT_SHA=$(git -C .. rev-parse --short HEAD 2>/dev/null || echo local)
+      gcloud builds submit .. --config=../cloudbuild.yaml --project=${var.gcp_project_id} --substitutions=COMMIT_SHA=$COMMIT_SHA
+    EOT
     interpreter = ["/bin/sh", "-c"]
   }
 
