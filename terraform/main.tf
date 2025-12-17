@@ -206,6 +206,26 @@ resource "google_cloud_run_service" "agentic_log_attacker" {
     google_project_service.required_apis,
     google_secret_manager_secret_version.gemini_api_key,
     google_secret_manager_secret_version.github_token,
+    google_secret_manager_secret_version.allowed_service_accounts,
+    null_resource.cloud_build_submit
+  ]
+}
+
+# Trigger Cloud Build to build and push the container image when deploying via Terraform.
+# This uses a local-exec provisioner and requires `gcloud` available where `terraform apply` runs.
+resource "null_resource" "cloud_build_submit" {
+  count = var.deploy_via_terraform ? 1 : 0
+
+  provisioner "local-exec" {
+    command = "gcloud builds submit .. --config=../cloudbuild.yaml --project=${var.gcp_project_id}"
+    interpreter = ["/bin/sh", "-c"]
+  }
+
+  # Ensure secrets and APIs are available before running the build
+  depends_on = [
+    google_project_service.required_apis,
+    google_secret_manager_secret_version.gemini_api_key,
+    google_secret_manager_secret_version.github_token,
     google_secret_manager_secret_version.allowed_service_accounts
   ]
 }
