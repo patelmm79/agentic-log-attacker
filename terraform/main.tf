@@ -251,7 +251,12 @@ resource "null_resource" "build" {
 
     # print debug info then submit from repo root and use the repo's cloudbuild.yaml
     # fallback to default prefix if var.secret_prefix is empty to avoid leading-underscore names
-    command = "echo '_DEBUG: _SECRET_PREFIX=${var.secret_prefix}' && echo '_DEBUG: COMMIT_SHA=${random_id.build_tag[0].hex}' && echo '_DEBUG: BUILD_DIR=${path.root}/..' && gcloud builds submit . --project=${var.gcp_project_id} --config=cloudbuild.yaml --substitutions=COMMIT_SHA=${random_id.build_tag[0].hex},_SECRET_PREFIX=${var.secret_prefix != \"\" ? var.secret_prefix : \"agentic_log_attacker\"}"
+    command = <<-EOT
+  echo '_DEBUG: _SECRET_PREFIX=${var.secret_prefix}'
+  echo '_DEBUG: COMMIT_SHA=${random_id.build_tag[0].hex}'
+  echo '_DEBUG: BUILD_DIR=${path.root}/..'
+  gcloud builds submit . --project=${var.gcp_project_id} --config=cloudbuild.yaml --substitutions=COMMIT_SHA=${random_id.build_tag[0].hex},_SECRET_PREFIX=${var.secret_prefix != "" ? var.secret_prefix : "agentic_log_attacker"}
+  EOT
     interpreter = ["bash", "-c"]
   }
 
