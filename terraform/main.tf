@@ -40,7 +40,7 @@ resource "google_project_service" "required_apis" {
 
 # Create Secret Manager secret for ALLOWED_SERVICE_ACCOUNTS
 resource "google_secret_manager_secret" "allowed_service_accounts" {
-  secret_id = "ALLOWED_SERVICE_ACCOUNTS"
+  secret_id = "${var.secret_prefix}_ALLOWED_SERVICE_ACCOUNTS"
 
   replication {
     auto {}
@@ -57,7 +57,7 @@ resource "google_secret_manager_secret_version" "allowed_service_accounts" {
 
 # Create Secret Manager secret for GEMINI_API_KEY
 resource "google_secret_manager_secret" "gemini_api_key" {
-  secret_id = "GEMINI_API_KEY"
+  secret_id = "${var.secret_prefix}_GEMINI_API_KEY"
 
   replication {
     auto {}
@@ -74,7 +74,7 @@ resource "google_secret_manager_secret_version" "gemini_api_key" {
 
 # Create Secret Manager secret for GITHUB_TOKEN
 resource "google_secret_manager_secret" "github_token" {
-  secret_id = "GITHUB_TOKEN"
+  secret_id = "${var.secret_prefix}_GITHUB_TOKEN"
 
   replication {
     auto {}

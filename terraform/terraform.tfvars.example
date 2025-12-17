@@ -26,3 +26,7 @@ container_image = "gcr.io/globalbiting-dev/agentic-log-attacker:latest"
 # Set to false (default) if deploying via Cloud Build
 # Set to true if you want Terraform to deploy the Cloud Run service directly
 deploy_via_terraform = false
+
+# Secret prefix to avoid collisions in Secret Manager
+# Example will create secrets named like "agentic_log_attacker_GEMINI_API_KEY"
+secret_prefix = "agentic_log_attacker"

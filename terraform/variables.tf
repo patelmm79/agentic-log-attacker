@@ -49,3 +49,10 @@ variable "deploy_via_terraform" {
   # Set to true if deploying directly from Terraform
   # Set to false if deploying via Cloud Build, and Terraform only manages secrets
 }
+
+# Prefix to avoid secret id collisions across projects/apps
+variable "secret_prefix" {
+  description = "Prefix applied to Secret Manager secret IDs to avoid name collisions"
+  type        = string
+  default     = "agentic_log_attacker"
+}
