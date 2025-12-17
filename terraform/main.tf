@@ -248,8 +248,8 @@ resource "null_resource" "build" {
     # run from parent of the terraform module (repo root) so cloudbuild.yaml is available
     working_dir = "${path.root}/.."
 
-    # submit from repo root and use the repo's cloudbuild.yaml with COMMIT_SHA substitution
-    command = "gcloud builds submit . --project=${var.gcp_project_id} --config=cloudbuild.yaml --substitutions=COMMIT_SHA=${random_id.build_tag[0].hex}"
+    # submit from repo root and use the repo's cloudbuild.yaml with COMMIT_SHA and _SECRET_PREFIX substitutions
+    command = "gcloud builds submit . --project=${var.gcp_project_id} --config=cloudbuild.yaml --substitutions=COMMIT_SHA=${random_id.build_tag[0].hex},_SECRET_PREFIX=${var.secret_prefix}"
     interpreter = ["bash", "-c"]
   }
 
