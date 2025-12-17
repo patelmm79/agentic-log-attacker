@@ -43,7 +43,7 @@ resource "google_secret_manager_secret" "allowed_service_accounts" {
   secret_id = "ALLOWED_SERVICE_ACCOUNTS"
 
   replication {
-    automatic = true
+    automatic {}
   }
 
   depends_on = [google_project_service.required_apis]
@@ -60,7 +60,7 @@ resource "google_secret_manager_secret" "gemini_api_key" {
   secret_id = "GEMINI_API_KEY"
 
   replication {
-    automatic = true
+    automatic {}
   }
 
   depends_on = [google_project_service.required_apis]
@@ -77,7 +77,7 @@ resource "google_secret_manager_secret" "github_token" {
   secret_id = "GITHUB_TOKEN"
 
   replication {
-    automatic = true
+    automatic {}
   }
 
   depends_on = [google_project_service.required_apis]
