@@ -14,6 +14,10 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.0"
     }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.0"
+    }
     googlebeta = {
       source  = "hashicorp/google-beta"
       version = "~> 5.0"
@@ -221,61 +225,28 @@ resource "google_cloud_run_service" "agentic_log_attacker" {
     google_secret_manager_secret_version.gemini_api_key,
     google_secret_manager_secret_version.github_token,
     google_secret_manager_secret_version.allowed_service_accounts,
-    google_cloudbuild_build.build
+    null_resource.build
   ]
 }
 
 # Trigger Cloud Build to build and push the container image when deploying via Terraform.
-# This uses a local-exec provisioner and requires `gcloud` available where `terraform apply` runs.
+# This uses a local-exec provisioner and requires `gcloud` available where `terraform apply` runs (Cloud Shell recommended).
 resource "random_id" "build_tag" {
   count = var.deploy_via_terraform ? 1 : 0
   byte_length = 4
 }
 
-resource "google_cloudbuild_build" "build" {
-  provider = google-beta
-  count   = var.deploy_via_terraform ? 1 : 0
-  project = var.gcp_project_id
+resource "null_resource" "build" {
+  count = var.deploy_via_terraform ? 1 : 0
 
-  images = [
-    "gcr.io/${var.gcp_project_id}/agentic-log-attacker:${random_id.build_tag[0].hex}"
-  ]
-
-  dynamic "steps" {
-    for_each = [1]
-    content {
-      name = "gcr.io/cloud-builders/docker"
-      args = ["build", "--no-cache", "-t", "gcr.io/${var.gcp_project_id}/agentic-log-attacker:${random_id.build_tag[0].hex}", "."]
-    }
+  triggers = {
+    build_tag       = random_id.build_tag[0].hex
+    container_image = "gcr.io/${var.gcp_project_id}/agentic-log-attacker:${random_id.build_tag[0].hex}"
   }
 
-  steps {
-    name = "gcr.io/cloud-builders/docker"
-    args = ["push", "gcr.io/${var.gcp_project_id}/agentic-log-attacker:${random_id.build_tag[0].hex}"]
-  }
-
-  steps {
-    name = "gcr.io/cloud-builders/gcloud"
-    args = [
-      "run",
-      "deploy",
-      "agentic-log-attacker",
-      "--image",
-      "gcr.io/${var.gcp_project_id}/agentic-log-attacker:${random_id.build_tag[0].hex}",
-      "--region",
-      var.gcp_region,
-      "--platform",
-      "managed",
-      "--no-allow-unauthenticated",
-      "--set-env-vars",
-      "GOOGLE_CLOUD_PROJECT=${var.gcp_project_id},CLOUD_RUN_REGION=${var.gcp_region},GEMINI_MODEL_NAME=gemini-2.5-flash,DEV_NEXUS_URL=${var.dev_nexus_url}",
-      "--set-secrets",
-      "GEMINI_API_KEY=${google_secret_manager_secret.gemini_api_key.secret_id}:latest,GITHUB_TOKEN=${google_secret_manager_secret.github_token.secret_id}:latest,ALLOWED_SERVICE_ACCOUNTS=${google_secret_manager_secret.allowed_service_accounts.secret_id}:latest",
-      "--timeout",
-      "300",
-      "--memory",
-      "1Gi"
-    ]
+  provisioner "local-exec" {
+    command = "gcloud builds submit --project=${var.gcp_project_id} --tag gcr.io/${var.gcp_project_id}/agentic-log-attacker:${random_id.build_tag[0].hex} . && gcloud run deploy agentic-log-attacker --project=${var.gcp_project_id} --image=gcr.io/${var.gcp_project_id}/agentic-log-attacker:${random_id.build_tag[0].hex} --region=${var.gcp_region} --platform=managed --no-allow-unauthenticated --set-env-vars=GOOGLE_CLOUD_PROJECT=${var.gcp_project_id},CLOUD_RUN_REGION=${var.gcp_region},GEMINI_MODEL_NAME=gemini-2.5-flash,DEV_NEXUS_URL=${var.dev_nexus_url} --set-secrets=GEMINI_API_KEY=${google_secret_manager_secret.gemini_api_key.secret_id}:latest,GITHUB_TOKEN=${google_secret_manager_secret.github_token.secret_id}:latest,ALLOWED_SERVICE_ACCOUNTS=${google_secret_manager_secret.allowed_service_accounts.secret_id}:latest --memory=1Gi --timeout=300s"
+    interpreter = ["bash", "-c"]
   }
 
   depends_on = [
