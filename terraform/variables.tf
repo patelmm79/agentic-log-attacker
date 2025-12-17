@@ -57,7 +57,7 @@ variable "secret_prefix" {
   default     = "agentic_log_attacker"
 
   validation {
-    condition     = length(trim(var.secret_prefix)) > 0
+    condition     = length(trimspace(var.secret_prefix)) > 0
     error_message = "variable \"secret_prefix\" must not be empty — provide a non-empty prefix (e.g. 'agentic_log_attacker')"
   }
 }
