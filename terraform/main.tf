@@ -261,7 +261,8 @@ resource "null_resource" "build" {
     google_service_account.cloud_run_sa,
     google_secret_manager_secret_iam_member.cloud_run_gemini,
     google_secret_manager_secret_iam_member.cloud_run_github,
-    google_secret_manager_secret_iam_member.cloud_run_allowed_sa
+    google_secret_manager_secret_iam_member.cloud_run_allowed_sa,
+    google_project_iam_member.cloud_run_secret_accessor
   ]
 }
 
@@ -294,6 +295,14 @@ resource "google_project_iam_member" "logging_viewer" {
   count   = var.deploy_via_terraform ? 1 : 0
   project = var.gcp_project_id
   role    = "roles/logging.viewer"
+  member  = "serviceAccount:${google_service_account.cloud_run_sa[0].email}"
+}
+
+# Grant Secret Manager access at project level to the Cloud Run service account
+resource "google_project_iam_member" "cloud_run_secret_accessor" {
+  count   = var.deploy_via_terraform ? 1 : 0
+  project = var.gcp_project_id
+  role    = "roles/secretmanager.secretAccessor"
   member  = "serviceAccount:${google_service_account.cloud_run_sa[0].email}"
 }
 
