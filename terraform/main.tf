@@ -245,10 +245,11 @@ resource "null_resource" "build" {
   }
 
   provisioner "local-exec" {
-    # submit the repository's Cloud Build config and pass COMMIT_SHA substitution
-    working_dir = "${path.root}"
+    # run from parent of the terraform module (repo root) so cloudbuild.yaml is available
+    working_dir = "${path.root}/.."
 
-    command = "gcloud builds submit \"${path.root}\" --project=${var.gcp_project_id} --config=\"${path.root}/cloudbuild.yaml\" --substitutions=COMMIT_SHA=${random_id.build_tag[0].hex}"
+    # submit from repo root and use the repo's cloudbuild.yaml with COMMIT_SHA substitution
+    command = "gcloud builds submit . --project=${var.gcp_project_id} --config=cloudbuild.yaml --substitutions=COMMIT_SHA=${random_id.build_tag[0].hex}"
     interpreter = ["bash", "-c"]
   }
 
