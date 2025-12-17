@@ -55,4 +55,9 @@ variable "secret_prefix" {
   description = "Prefix applied to Secret Manager secret IDs to avoid name collisions"
   type        = string
   default     = "agentic_log_attacker"
+
+  validation {
+    condition     = length(trim(var.secret_prefix)) > 0
+    error_message = "variable \"secret_prefix\" must not be empty — provide a non-empty prefix (e.g. 'agentic_log_attacker')"
+  }
 }
