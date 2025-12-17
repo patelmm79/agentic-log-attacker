@@ -242,14 +242,16 @@ resource "null_resource" "build" {
   triggers = {
     build_tag       = random_id.build_tag[0].hex
     container_image = "gcr.io/${var.gcp_project_id}/agentic-log-attacker:${random_id.build_tag[0].hex}"
+    secret_prefix   = var.secret_prefix
   }
 
   provisioner "local-exec" {
     # run from parent of the terraform module (repo root) so cloudbuild.yaml is available
     working_dir = "${path.root}/.."
 
-    # submit from repo root and use the repo's cloudbuild.yaml with COMMIT_SHA and _SECRET_PREFIX substitutions
-    command = "gcloud builds submit . --project=${var.gcp_project_id} --config=cloudbuild.yaml --substitutions=COMMIT_SHA=${random_id.build_tag[0].hex},_SECRET_PREFIX=${var.secret_prefix}"
+    # print debug info then submit from repo root and use the repo's cloudbuild.yaml
+    # fallback to default prefix if var.secret_prefix is empty to avoid leading-underscore names
+    command = "echo '_DEBUG: _SECRET_PREFIX=${var.secret_prefix}' && echo '_DEBUG: COMMIT_SHA=${random_id.build_tag[0].hex}' && echo '_DEBUG: BUILD_DIR=${path.root}/..' && gcloud builds submit . --project=${var.gcp_project_id} --config=cloudbuild.yaml --substitutions=COMMIT_SHA=${random_id.build_tag[0].hex},_SECRET_PREFIX=${var.secret_prefix != \"\" ? var.secret_prefix : \"agentic_log_attacker\"}"
     interpreter = ["bash", "-c"]
   }
 
